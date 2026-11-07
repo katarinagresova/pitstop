@@ -54,3 +54,5 @@
 .md-typeset figure img { border: 1px solid var(--md-default-fg-color--lightest); border-radius: 4px; }
 /* MathJax's hidden copy for screen readers can be wider than the formula and widen the page on phones. */
 mjx-assistive-mml { max-width: 100%; }
+/* File names in the first column of output tables: one line each. */
+.md-typeset td:first-child code { white-space: nowrap; }
