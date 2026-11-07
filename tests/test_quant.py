@@ -46,7 +46,7 @@ def test_offsets_recovered(run):
 
 
 def test_em_length_term():
-    # design record A.2: A = 900 nt, B = 600 nt inside A, both 1 read/nt
+    # A = 900 nt, B = 600 nt inside A, both 1 read/nt
     unique = np.array([300.0, 0.0])
     classes = sp.csr_matrix(np.array([[1.0, 1.0]]))
     alpha, *_ = quant.em(unique, classes, np.array([1200.0]), np.array([900.0, 600.0]), 1e-9, 100_000)

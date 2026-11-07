@@ -1,13 +1,10 @@
 # ribokit
 
-A Python Ribo-seq toolkit, built milestone by milestone, deterministic from
-end to end.
-
-Milestone 1: P-site offset estimation and CDS-level quantification from
-transcriptome alignments (`ribokit quant`). Milestone 2: reading-frame
-evidence for uORFs and other ORFs besides the CDS (`ribokit orfs` /
-`ribokit score`). Milestone 3: translation start sites from harringtonine
-libraries, and a uORF catalogue from them (`ribokit starts`).
+A Python Ribo-seq toolkit, deterministic from end to end: P-site offset
+estimation and CDS-level quantification from transcriptome alignments
+(`ribokit quant`), reading-frame evidence for uORFs and other ORFs besides
+the CDS (`ribokit orfs` / `ribokit score`), and translation start sites from
+harringtonine libraries, with a uORF catalogue from them (`ribokit starts`).
 
 ## Why
 
@@ -32,14 +29,6 @@ simulation alone.
 - **Using `orfs` and `score`**: a [typical workflow](orfs.md#typical-workflow)
   for two conditions, [how to read the scores](orfs.md#reading-the-results),
   and [what they give on real data](orfs.md#validation-on-real-data).
-
-## Status
-
-Milestone 1 (offsets + CDS quantification), milestone 2 (ORF/uORF
-counting and frame scoring) and milestone 3 (start sites and a uORF
-catalogue from harringtonine libraries). Later milestones (start counts and
-start usage, codon occupancy) are tracked internally and not part of this
-release yet.
 
 ## License
 

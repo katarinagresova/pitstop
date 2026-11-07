@@ -1,4 +1,4 @@
-# Pinned to the versions the tests and the eIF4E 4h validation ran with.
+# Pinned to the versions the tests ran with.
 # Create: mamba env create -p .env -f environment.yml && .env/bin/pip install --no-deps -e .
 name: ribokit
 channels:

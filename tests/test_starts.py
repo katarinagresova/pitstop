@@ -85,7 +85,7 @@ def test_near_starts_best_first():
 
 @pytest.fixture(scope="module")
 def started(tmp_path_factory):
-    # as in the validation: one offset table per pool, from `quant` on the merged harringtonine BAMs
+    # one offset table per pool, from `quant` on the merged harringtonine BAMs (as docs/starts.md advises)
     d = tmp_path_factory.mktemp("startsynth")
     data = make_start_dataset(d)
     pysam.cat("-o", str(d / "harr.bam"), *[str(data["libs"]["harringtonine", r]) for r in (1, 2)])
@@ -111,7 +111,7 @@ def test_start_lengths_from_kernel(started):
 
 
 def test_synthetic_calls(started):
-    # check 1 for given starts. Over seeds 3-12: every annotated start called; 2 of 70 planted starts missed
+    # synthetic truth for given starts. Over seeds 3-12: every annotated start called; 2 of 70 planted starts missed
     # (q 0.07-0.09, a uORF ATG and the pair's ATG); the pause and the untranslated uORF never called; at most
     # one of the ten untranslated filler candidates called (q 0.009-0.025: BH among true starts). The pair's
     # CTG gets the ATG's nt -1 reads and is called in 6 of 10 seeds: the scan's near-start rule, not this
@@ -142,7 +142,7 @@ def test_starts_cli_deterministic(started, tmp_path):
 
 
 def test_scan_calls(started):
-    # check 1 for the scan. Over seeds 3-12: every annotated start called; 61 of 70 planted starts called at their
+    # synthetic truth for the scan. Over seeds 3-12: every annotated start called; 61 of 70 planted starts called at their
     # codon, the misses at 4-5x enrichment with 1-5 elongation reads (q 0.06-0.3); the pair's CTG and the weaker
     # start 5 codons after a planted one are never called, and listed with the start that stops them; the pause
     # and the untranslated uORF never called. Calls at no planted start: 0-5 per seed in leaders (q >= 0.012 but

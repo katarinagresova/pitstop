@@ -18,7 +18,6 @@ SENSE = [a + b + c for a in "ACGT" for b in "ACGT" for c in "ACGT" if a + b + c 
 _COMP = str.maketrans("ACGT", "TGCA")
 
 # read length -> [(offset, probability)]; phase = -offset mod 3, so one offset per (length, phase).
-# Length 29 is the (12, 12, 15) case of the design record in RiboStan's convention.
 PLANTED = {28: [(12, .7), (11, .1), (13, .2)],
            29: [(12, .6), (11, .15), (13, .25)],
            30: [(12, .5), (13, .3), (14, .2)]}

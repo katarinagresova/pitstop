@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 300" width="780" height="300" font-family="Roboto, Helvetica Neue, Arial, sans-serif" font-size="13" fill="#263238">
-<!-- generated: share of CDS windows called, by codons and reads (validation check 3, 6 libraries) -->
+<!-- generated: share of CDS windows called, by codons and reads (6 libraries) -->
 <rect width="780" height="300" fill="white"/>
 <text x="160.0" y="60.0" text-anchor="end" font-size="12" fill="#263238" font-weight="normal">6</text>
 <rect x="170" y="40" width="66" height="32" fill="#eef2f3" stroke="white" stroke-width="2"/>

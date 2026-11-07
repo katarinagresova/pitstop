@@ -8,15 +8,14 @@ the start or the stop codon change it, so they are a class's support.
 
 Within one read length the phases differ by one nt of 5' trimming, so their
 offsets are three consecutive values, one per phase. Each length gets the window
-of three consecutive offsets with the highest summed score (the design record's
-"window over offset - phase"). RiboStan's window runs over (offset, phase) rows
-instead and cannot express e.g. (12, 11, 13); choosing each phase on its own
-was unstable on real data (eIF4E 4h: 17 of 39 classes changed between libraries).
+of three consecutive offsets with the highest summed score. A window over
+(offset, phase) rows cannot express e.g. (12, 11, 13); choosing each phase on
+its own was unstable on real data (17 of 39 classes changed between libraries).
 
 Adjacent windows differ in one phase's offset, so how well the data pin a phase
 is measured per phase: the best window against the best window that gives this
 phase another offset ("rival"). z = score lead / sqrt(reads counted by exactly
-one of the two), a McNemar statistic. On eIF4E 4h, every class whose offset
+one of the two), a McNemar statistic. On real data, every class whose offset
 changed between the even and the odd transcripts of a library had z < 4.
 """
 import logging

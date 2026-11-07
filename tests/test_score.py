@@ -39,7 +39,7 @@ def scored(tmp_path_factory):
 
 
 def test_synthetic_calls(scored):
-    # check 1: translated ORFs are called; the untranslated candidate, the CUG with a start peak only
+    # synthetic truth: translated ORFs are called; the untranslated candidate, the CUG with a start peak only
     # and U4 (untranslated, but the CDS start peak spills into it) are not. Over seeds 2-11, the
     # untranslated three had q >= 0.34, U1_uORF and N1_ORF q <= 4.2e-5, U5_uoORF q <= 0.0063. The
     # uoORFs U2 and U3 are not called reliably (q 4e-4-0.88): their 19 leader codons lead ~2/3 of the

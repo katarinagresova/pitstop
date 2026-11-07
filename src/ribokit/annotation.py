@@ -126,7 +126,7 @@ def load_annotation(gtf, fasta):
     stats.update(no_cds=n_no_cds, cds_not_contiguous_in_transcript=n_not_contiguous)
 
     # Does the GTF's CDS include the stop codon? Majority vote over CDSs whose length
-    # is a multiple of 3, as RiboStan does.
+    # is a multiple of 3.
     in3 = [r for r in rows if (r[4] - r[3]) % 3 == 0]
     last_is_stop = sum(r[5][r[4] - 3:r[4]] in STOPS for r in in3)
     next_is_stop = sum(r[5][r[4]:r[4] + 3] in STOPS for r in in3)

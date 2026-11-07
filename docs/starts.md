@@ -39,10 +39,10 @@ P-sites at the same position predict.
 
 ```text
 pool        harringtonine          elongation
-minusAux    out/harr_minus_rep1    out/elong_minus_rep1
-minusAux    out/harr_minus_rep2    out/elong_minus_rep2
-plusAux     out/harr_plus_rep1     out/elong_plus_rep1
-plusAux     out/harr_plus_rep2     out/elong_plus_rep2
+control     out/harr_control_rep1  out/elong_control_rep1
+control     out/harr_control_rep2  out/elong_control_rep2
+treated     out/harr_treated_rep1  out/elong_treated_rep1
+treated     out/harr_treated_rep2  out/elong_treated_rep2
 ```
 
 Each row is one replicate: a harringtonine library and its matched elongation
@@ -57,14 +57,14 @@ are not comparable. Give each `orfs` run of a pool the offsets of
 same GTF. Transcripts that are not in every `orfs` run are left out.
 
 ```bash
-samtools cat -o harr_minus.bam harr_minus_rep1.bam harr_minus_rep2.bam
-ribokit quant --bam harr_minus.bam --gtf annotation.gtf --fasta genome.fa \
-    --read-lengths 18-30 --out-prefix out/minus
-for lib in harr_minus_rep1 harr_minus_rep2 elong_minus_rep1 elong_minus_rep2; do
+samtools cat -o harr_control.bam harr_control_rep1.bam harr_control_rep2.bam
+ribokit quant --bam harr_control.bam --gtf annotation.gtf --fasta genome.fa \
+    --read-lengths 18-30 --out-prefix out/control
+for lib in harr_control_rep1 harr_control_rep2 elong_control_rep1 elong_control_rep2; do
     ribokit orfs --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
-        --read-lengths 18-30 --offsets out/minus.offsets.tsv --out-prefix out/$lib
+        --read-lengths 18-30 --offsets out/control.offsets.tsv --out-prefix out/$lib
 done
-# the same for the plusAux pool, with its own offsets
+# the same for the treated pool, with its own offsets
 ribokit starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa \
     --scan --out-prefix out/starts
 ```
@@ -226,8 +226,8 @@ catalogue's ORFs in other libraries, and score their frames with
 
 ## Validation on real data
 
-HCT116, 4 h, two pools of three replicates (one depletion line, without and
-with auxin): six harringtonine libraries and their six elongation libraries.
+A human cell line, two pools of three replicates (one experiment, two
+conditions): six harringtonine libraries and their six elongation libraries.
 
 - **Start lengths**: 23-29 nt. The kernel holds 44-51% of its P-sites at nt 0
   and 3-4% at nt -1.

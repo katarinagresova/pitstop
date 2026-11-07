@@ -3,8 +3,8 @@
 A read is compatible with a transcript's CDS when one of its alignments to that
 transcript puts the P-site inside the CDS. Model: a read comes from CDS t with
 probability theta_t, and from each of its L_t positions equally, so
-P(read) = sum over compatible t of theta_t / L_t. RiboStan's Stan model has no
-1/L_t, which splits shared reads by read share instead of density.
+P(read) = sum over compatible t of theta_t / L_t. Without the 1/L_t, shared
+reads would split by read share instead of density.
 EM starts from an even split of every read over its compatible CDSs (no
 randomness) and runs until one EM step moves no expected count by `tol` reads.
 SQUAREM extrapolates along pairs of EM steps: plain EM needs 10^5-10^6 steps

@@ -59,11 +59,11 @@ many of its codons, show that ribosomes elongate through it.
   frame. A count of the reads in the span cannot tell these apart; the frame can.</figcaption>
 </figure>
 
-A real case, from libraries of a human cell line: one CUG in GAPDH's leader
-holds as many P-sites as GAPDH's AUG start codon, so a span count makes the
-ORF that starts at this CUG look well translated. But only 1.4-2.4% of the
-reads after the CUG are in that ORF's frame — the rest follow GAPDH's CDS,
-which the ORF overlaps — and harringtonine, which holds ribosomes at start
+A real case, from libraries of a human cell line: one CUG in the leader of a
+highly expressed mRNA holds as many P-sites as the mRNA's AUG start codon, so
+a span count makes the ORF that starts at this CUG look well translated. But
+only 1.4-2.4% of the reads after the CUG are in that ORF's frame — the rest
+follow the CDS, which the ORF overlaps — and harringtonine, which holds ribosomes at start
 codons ([Ingolia et al. 2011](#references)), raises the AUG peak but not the
 CUG's: with it, the AUG has 11-19x the CUG's P-sites, without it about as
 many ([A peak is not a uORF](#a-peak-is-not-a-uorf)).
@@ -299,8 +299,8 @@ with one `--orfs-prefix`. The runs must share one ORF table: if their
 </figure>
 
 - **Why the start codon does not vote.** Ribosomes that initiate make a peak
-  at the start codon whether or not they go on to elongate, as at GAPDH's CUG
-  ([Background](#background)). The codons after it ask only whether
+  at the start codon whether or not they go on to elongate, as at the leader
+  CUG in the [Background](#background). The codons after it ask only whether
   ribosomes elongate in the ORF's frame.
 - **Which lengths vote.** By default, the read lengths whose frame-0 share is
   at least 0.9 in *every* given library's `frames.tsv` (`--frame-lengths LO-HI`
@@ -691,12 +691,12 @@ are not shipped with ribokit; the numbers come from its validation runs.
   experiments of 3 replicates each (3 of them are also among the 6).
 - **6 harringtonine libraries**, one for each of the 6 libraries (same
   condition and replicate), for the start peaks.
-- **The catalogue**: 1,741 ORFs that RiboTIE ([Clauwaert et al.
-  2025](#references)) called in at least 3 of the 15 libraries: 1,683 uORFs
+- **The catalogue**: 1,741 ORFs that an ORF caller called in at least 3
+  of the 15 libraries: 1,683 uORFs
   and 58 uoORFs, with ATG starts 1,051, CTG 416, GTG 150 and TTG 124, and a
-  median length of 30 nt. Added to it: the ORF that starts at GAPDH's CUG
-  ([A peak is not a uORF](#a-peak-is-not-a-uorf)), a uoORF, so 59 uoORFs in
-  all.
+  median length of 30 nt. Added to it: the ORF that starts at the leader
+  CUG of [A peak is not a uORF](#a-peak-is-not-a-uorf), a uoORF, so 59
+  uoORFs in all.
 
 ### Is the null calibrated?
 
@@ -850,16 +850,16 @@ start codon ([Background](#background)).
 
 ### A peak is not a uORF
 
-GAPDH's leader has a CUG, made by a variant of this cell line, that holds
-73-89% of the leader's P-sites. In the elongation libraries, nt 0 of the CUG
-has as many P-sites as nt 0 of GAPDH's AUG start codon (514 and 510 in one
-condition, 52 and 60 in the other).
+The leader of a highly expressed mRNA has a CUG, made by a variant of this
+cell line, that holds 73-89% of the leader's P-sites. In the elongation
+libraries, nt 0 of the CUG has as many P-sites as nt 0 of the mRNA's AUG
+start codon (514 and 510 in one condition, 52 and 60 in the other).
 
 - **Counts.** `orfs` counts the peak for the ORF that starts at the CUG: 842
-  reads over the 6 libraries, 0.6-1.4% of GAPDH's CDS reads per library. A
+  reads over the 6 libraries, 0.6-1.4% of the CDS's reads per library. A
   count alone makes this ORF look translated.
 - **Frame.** Only 1.4% of the ORF's score-length P-sites are in its frame
-  (2.4% in the 15 libraries); the rest follow GAPDH's CDS, which the ORF
+  (2.4% in the 15 libraries); the rest follow the CDS, which the ORF
   overlaps. `p` is 1 in the 6 libraries, `q` 0.77 in the 15: not called.
 - **Start.** Harringtonine raises the AUG peak but not the CUG's: with it,
   the AUG has 11-19 times the CUG's P-sites (5,559 against 488, and 845
