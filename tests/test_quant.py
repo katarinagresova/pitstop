@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from ribokit import annotation, quant
-from ribokit.bam import _footprint_length
+from pitstop import annotation, quant
+from pitstop.bam import _footprint_length
 
 from synth import PLANTED, TRUE_OFFSETS, make_dataset
 

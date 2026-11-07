@@ -6,8 +6,8 @@ import pysam
 import pytest
 from scipy import stats as sps
 
-from ribokit import cli, orfs, starts
-from ribokit.quant import quantify
+from pitstop import cli, orfs, starts
+from pitstop.quant import quantify
 
 from synth import make_start_dataset
 
@@ -214,7 +214,7 @@ def test_scan_null_windows_clear_of_called_starts(started, tmp_path, monkeypatch
 
 @pytest.mark.parametrize("table", ["start_orfs", "catalogue"])
 def test_scan_orfs_feed_orfs(started, tmp_path, table):
-    # start_orfs.tsv and catalogue.tsv are ORF tables for `ribokit orfs`: every row is kept, and the catalogue's CDS
+    # start_orfs.tsv and catalogue.tsv are ORF tables for `pitstop orfs`: every row is kept, and the catalogue's CDS
     # rows are the annotated CDSs (none added)
     d, data = started["dir"], started["data"]
     _, _, _, st = orfs.run(str(data["libs"]["elongation", 1]), str(data["gtf"]), str(data["fasta"]), WINDOW,

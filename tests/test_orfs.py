@@ -5,8 +5,8 @@ import pandas as pd
 import pysam
 import pytest
 
-from ribokit import orfs, quant
-from ribokit.bam import _footprint_length
+from pitstop import orfs, quant
+from pitstop.bam import _footprint_length
 
 from synth import PLANTED, make_dataset, make_orf_dataset
 
