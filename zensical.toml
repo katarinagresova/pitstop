@@ -17,7 +17,12 @@ extra_javascript = [
   "javascripts/offset-explorer.js",
   "javascripts/em-explorer.js",
   "javascripts/score-explorer.js",
+  "javascripts/wordmark.js",
 ]
+
+[project.theme]
+logo = "assets/pitstop-mark.svg"
+favicon = "assets/pitstop-mark.svg"
 
 [project.markdown_extensions]
 admonition = {}
