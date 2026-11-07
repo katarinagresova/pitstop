@@ -1,7 +1,7 @@
 import argparse
 import logging
 
-from . import __version__, orfs, score
+from . import __version__, orfs, score, starts
 from .quant import quantify
 
 
@@ -13,6 +13,13 @@ def read_lengths(spec):
     if lo > hi:
         raise argparse.ArgumentTypeError(f"LO > HI in {spec!r}")
     return lo, hi
+
+
+def codons(spec):
+    out = tuple(c.strip().upper() for c in spec.split(","))
+    if not out or any(len(c) != 3 or set(c) - set("ACGT") for c in out):
+        raise argparse.ArgumentTypeError(f"expected codons such as ATG,CTG, got {spec!r}")
+    return out
 
 
 def add_shared(sp, outputs):
@@ -36,7 +43,7 @@ def main(argv=None):
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
     q = sub.add_parser("quant", help="P-site offsets and CDS quantification from a transcriptome BAM")
-    add_shared(q, "quant.tsv, .offsets.tsv, .ties.tsv, .stats.tsv, .psites.tsv")
+    add_shared(q, "quant.tsv, .offsets.tsv, .ties.tsv, .stats.tsv, .psites.tsv, .qc.tsv")
     o = sub.add_parser("orfs", help="reads per ORF in its reading frame (one P-site offset per read length), "
                                     "and outside the ORFs per transcript")
     add_shared(o, "orfs.tsv, .frames.tsv, .codons.tsv, .offsets.tsv, .ties.tsv, .stats.tsv, "
@@ -51,6 +58,30 @@ def main(argv=None):
     s.add_argument("--frame-lengths", type=read_lengths, metavar="LO-HI",
                    help=f"read lengths that vote (default: those with a frame-0 share >= {score.MIN_FRAME0} "
                         "in every library)")
+    t = sub.add_parser("starts", help="start evidence: harringtonine P-sites against matched elongation P-sites, "
+                                      "from `ribokit orfs` runs")
+    t.add_argument("--libraries", required=True,
+                   help="TSV with columns pool, harringtonine, elongation: out prefixes of `ribokit orfs` runs, one "
+                        "row per replicate (a harringtonine library and its matched elongation library)")
+    t.add_argument("--gtf", required=True)
+    t.add_argument("--fasta", required=True, help="genome FASTA of the GTF")
+    which = t.add_mutually_exclusive_group(required=True)
+    which.add_argument("--orfs", help="ORF table (TSV with columns ORF_id Name start): its starts are tested, and the "
+                                      "annotated starts")
+    which.add_argument("--scan", action="store_true",
+                       help="test every start codon (ATG and its near-cognates) with harringtonine reads, call starts "
+                            "and write their ORFs (<prefix>.start_orfs.tsv) and the catalogue: their uORFs and uoORFs "
+                            "and the annotated CDSs (<prefix>.catalogue.tsv)")
+    t.add_argument("--out-prefix", required=True,
+                   help="writes <prefix>.starts.tsv, .kernel.tsv, .factors.tsv, .starts_stats.tsv")
+    t.add_argument("--start-lengths", type=read_lengths, metavar="LO-HI",
+                   help="read lengths that count (default: the longest run of lengths whose harringtonine P-sites "
+                        "peak at nt 0 of the annotated starts in every library)")
+    t.add_argument("--start-codons", type=codons, metavar="CODON,...",
+                   help=f"with --scan: the start codons to test (default {','.join(starts.START_CODONS)}). The "
+                        "annotated starts are tested whatever their codon")
+    t.add_argument("--fdr", type=float, default=starts.FDR,
+                   help="the BH cut: the scan calls the starts with q below it, and starts_stats.tsv counts them")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if a.command == "quant":
@@ -59,8 +90,11 @@ def main(argv=None):
     elif a.command == "orfs":
         orfs.run(a.bam, a.gtf, a.fasta, a.read_lengths, a.out_prefix, orfs_path=a.orfs, offsets_path=a.offsets,
                  min_support=a.min_offset_support, tol=a.tol, max_iter=a.max_iter)
-    else:
+    elif a.command == "score":
         score.run(a.orfs_prefix, a.out_prefix, frame_lengths=a.frame_lengths)
+    else:
+        starts.run(a.libraries, a.gtf, a.fasta, a.out_prefix, orfs_path=a.orfs, scan=a.scan,
+                   start_lengths=a.start_lengths, start_codons=a.start_codons, fdr=a.fdr)
 
 
 if __name__ == "__main__":
