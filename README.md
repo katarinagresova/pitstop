@@ -4,7 +4,7 @@
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
 [![docs](https://img.shields.io/badge/docs-online-E5412D)](https://katarinagresova.github.io/pitstop/)
 
-<img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300">
+<p><img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300" align="top"></p>
 
 **From Ribo-seq reads to translation: how much each gene is translated, which
 upstream ORFs are translated, and where translation starts.**
