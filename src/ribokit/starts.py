@@ -26,7 +26,9 @@ frame 0, 1 or 2, trailer, transcript), shape a per region (from the null windows
 with R = f_b s_t: the prior lifts a window with few elongation reads, but does not shrink a pause.
 Pools add their means and variances. An extra overdispersion phi per region and bin of
 expected reads makes at most 1% of the null windows reach p <= 0.01. q is BH per class: the annotated
-starts, and the other candidates per region.
+starts, and the other candidates per region. A scan calibrates phi twice: after a first call, the null
+windows in the codons 1-10 of the called starts (RAISED: run-off, as after an annotated start) are dropped,
+and the starts are called again.
 
 Candidates: the starts of an ORF table and the annotated starts, or a scan: each start codon (of the chosen
 start codons, default START_CODONS) with harringtonine reads in its window (BH counts every such start codon of
@@ -536,8 +538,8 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         return tuple(sum(g[i] for g in got) for i in range(4))
 
     nh, _, nm, nv = pooled(null_win)
-    phi = calibrate_phi(nh, nm, nv, region[null_win])
-    null_p = pvalues(nh, nm, nv, region[null_win], phi)
+    nr = region[null_win]
+    phi = calibrate_phi(nh, nm, nv, nr)
     st.update({f"phi {REGIONS[r]} {DEPTH[b]}": v for (r, b), v in phi.items()})
 
     if scan:
@@ -548,6 +550,35 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         st.update(got)
     h, e, m, v = pooled(pos)
     p = pvalues(h, m, v, region[pos], phi)
+    # BH per class, over every candidate of the class: a scan tests only the start codons with harringtonine
+    # reads, but the others are tests too (p = 1)
+    cls = np.where(np.isin(pos, cs_pos), 4, region[pos])
+    if scan:
+        every = np.flatnonzero(codon_mask(layout, start_codons) & (tx >= 0))
+        every = every[~np.isin(every, cs_pos)]
+        n_tests = np.r_[np.bincount(region[every], minlength=4), len(cs_pos)]
+    else:
+        n_tests = np.bincount(cls, minlength=5)
+
+    def class_q(p):
+        q = np.full(len(p), np.nan)
+        for c in range(5):
+            k = cls == c
+            if k.any():
+                q[k] = bh(p[k], n_tests[c])
+        return q
+
+    if scan:
+        # null windows clear of the called starts: harringtonine raises their codons 1-10, as for the annotated
+        # starts. Call, drop the null windows in RAISED of the called starts, calibrate phi again, call again
+        called, _ = near_starts(pos, p, class_q(p) < fdr, np.flatnonzero(cls == 4))
+        keep = ~covered(layout.size, pos[called] + RAISED[0], pos[called] + RAISED[1])[null_win]
+        nh, nm, nv, nr = nh[keep], nm[keep], nv[keep], nr[keep]
+        phi = calibrate_phi(nh, nm, nv, nr)
+        p = pvalues(h, m, v, region[pos], phi)
+        st.update({f"phi {REGIONS[r]} {DEPTH[b]}": v for (r, b), v in phi.items()})
+        st["null_windows_near_called"] = int((~keep).sum())
+    null_p = pvalues(nh, nm, nv, nr, phi)
     ann = np.isin(pos, cs_pos) & (m >= 3)
     enrich = np.median(h[ann] / m[ann]) if ann.any() else np.nan
     st["typical_enrichment"] = enrich
@@ -565,24 +596,15 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         "multimapped": sum(window_sums(pl.multi, pos) for pl in pools.values())
         / np.maximum(sum(window_sums(pl.h, pos) + window_sums(pl.e, pos) for pl in pools.values()), 1),
     })
-    # BH per class, over every candidate of the class: a scan tests only the start codons with harringtonine
-    # reads, but the others are tests too (p = 1)
-    cls = np.where(np.isin(pos, cs_pos), 4, region[pos])
-    if scan:
-        every = np.flatnonzero(codon_mask(layout, start_codons) & (tx >= 0))
-        every = every[~np.isin(every, cs_pos)]
-        n_tests = np.r_[np.bincount(region[every], minlength=4), len(cs_pos)]
-    else:
-        n_tests = np.bincount(cls, minlength=5)
-    out["q"] = np.nan
+    q_all = class_q(p)
+    out["q"] = q_all
     for c in range(5):
         k = cls == c
         if k.any():
-            q = bh(p[k], n_tests[c])
-            out.loc[k, "q"] = q
+            q = q_all[k]
             cut = p[k][q < fdr].max() if (q < fdr).any() else 0.0
-            nr = region[null_win] == min(c, 1)            # annotated starts: the CDS null windows
-            rate = (null_p[nr] <= cut).mean() if nr.any() and cut > 0 else 0.0
+            kn = nr == min(c, 1)            # annotated starts: the CDS null windows
+            rate = (null_p[kn] <= cut).mean() if kn.any() and cut > 0 else 0.0
             st.update({f"tests {CLASSES[c]}": int(n_tests[c]), f"candidates {CLASSES[c]}": int(k.sum()),
                        f"q<{fdr:g} {CLASSES[c]}": int((q < fdr).sum()), f"null_rate_at_cut {CLASSES[c]}": rate,
                        f"expected_false {CLASSES[c]}": rate * n_tests[c]})

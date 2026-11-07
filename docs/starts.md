@@ -141,7 +141,7 @@ an elongation peak (a pause) from being shrunk, so a pause is not called.
 - **Pools** add their means and variances.
 - **$\phi$** is calibrated per region and bin of expected reads on the null
   windows (one per 4 nt): the smallest $\phi$ that puts at most 1% of them at
-  $p \le 0.01$.
+  $p \le 0.01$. A scan calibrates it twice ([section 5](#5-the-scan)).
 - $p = P(H \ge h)$; `enrichment` is $h / m$.
 - $q$ is Benjamini-Hochberg per **class**: the annotated starts, and the other
   starts per region (leader, CDS, trailer, transcript without a CDS). With
@@ -171,6 +171,17 @@ they are called in order:
 
 Thus of two starts one or two codons apart, only the stronger is called.
 
+**The null windows of a scan.** A used start raises its codons 1-10, an
+annotated start or not: ribosomes that made a few peptide bonds before the
+drug acted stay there. The null codons stay clear of the annotated starts
+only, so null windows in the codons 1-10 of a uORF start look like starts and
+make $\phi$ larger. Thus a scan calls twice. The first call gives the called
+starts. The null windows in their window and codons 1-10 (nt -3 to +32) are
+dropped, $\phi$ is calibrated again on the rest, and the second call is the
+result. The factors and the prior keep all null windows. `starts_stats.tsv`
+gives the second $\phi$ and the number of null windows dropped
+(`null_windows_near_called`).
+
 ### 6. ORFs and the catalogue
 
 Each called start runs to its first in-frame stop codon. Its type comes from
@@ -196,6 +207,15 @@ catalogue's ORFs in other libraries, and score their frames with
 - **Leaders need more.** Leaders have a higher harringtonine / elongation
   ratio than CDSs near their start, so a leader start needs more
   harringtonine reads than a CDS start with the same elongation reads.
+- **Deep leader starts.** The expected false calls in `starts_stats.tsv`
+  come from the null windows of all depths, and most null windows are
+  shallow. Leader windows with many expected reads have more peaks at codons
+  that cannot start. In the five pools of the validation, an estimated 7% of
+  the leader calls with fewer than 30 expected reads are false, but 11-43% of
+  those with 30 or more. Most deep calls also raise their codons 1-5, as a
+  used start does; the peaks at null codons do not. Thus the deep calls stay
+  in the output. Find them by `expected`, and check the harringtonine reads
+  in their codons 1-5 before you use one alone.
 - **Trailers.** Harringtonine libraries can hold RNA fragments that the
   elongation libraries do not have, mostly in trailers and of short reads.
   `starts_stats.tsv` gives many expected false calls in trailers; use those
@@ -228,6 +248,18 @@ with auxin): six harringtonine libraries and their six elongation libraries.
   G at +4 in 40-60%; start codons in leaders that are not called, at the
   same depth, 50-58% and 22-37% ([Kozak 1986](#references)). The sequence
   plays no part in the test.
+- **Five pools**: the two pools above and one pool from each of three other
+  experiments, 15 harringtonine libraries in all. The scan
+  calls 7,516 leader starts at q < 0.05, and the catalogue has 4,161 uORFs
+  and 1,078 uoORFs. False calls among the leader calls, estimated per bin of
+  expected reads (the null windows' rate at the cut times the leader start
+  codons of the bin): 7% below 30 expected reads, 13% in all. At 30 or more
+  expected reads, the null codons of that depth give 43% (95% interval
+  30-60%). The harringtonine reads in codons 1-5 after the call give less:
+  35% of the deep calls raise these codons more than 2-fold against the
+  codons before the call, against 38-50% of the shallower calls and 11% of
+  the deep null peaks. If the true deep starts are like the shallower calls,
+  11-38% of the deep calls are false.
 
 ## References
 

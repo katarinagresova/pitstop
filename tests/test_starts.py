@@ -194,6 +194,24 @@ def test_scan_start_codons_and_fdr(started, tmp_path):
                    str(data["orfs"]), start_codons=("ATG",))
 
 
+def test_scan_null_windows_clear_of_called_starts(started, tmp_path, monkeypatch):
+    # a scan calibrates phi again on the null windows outside the codons 1-10 of the starts of a first call (run-off,
+    # as after an annotated start); given starts calibrate it once. The synthetic sets have too few null windows near
+    # a start for phi to change (seeds 3-8: 0-6 of about 300), so a loose cut makes the first call reach them
+    seen = []
+    real = starts.calibrate_phi
+    monkeypatch.setattr(starts, "calibrate_phi", lambda h, m, v, r: seen.append(len(h)) or real(h, m, v, r))
+    data = started["data"]
+    _, st = starts.run(str(started["sheet"]), str(data["gtf"]), str(data["fasta"]), str(tmp_path / "loose"), scan=True,
+                       fdr=0.5)
+    assert st["null_windows_near_called"] > 0
+    assert seen == [st["null_windows"], st["null_windows"] - st["null_windows_near_called"]]
+    seen.clear()
+    _, st = starts.run(str(started["sheet"]), str(data["gtf"]), str(data["fasta"]), str(tmp_path / "given"),
+                       str(data["orfs"]))
+    assert seen == [st["null_windows"]] and "null_windows_near_called" not in st
+
+
 @pytest.mark.parametrize("table", ["start_orfs", "catalogue"])
 def test_scan_orfs_feed_orfs(started, tmp_path, table):
     # start_orfs.tsv and catalogue.tsv are ORF tables for `ribokit orfs`: every row is kept, and the catalogue's CDS

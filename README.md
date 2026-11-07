@@ -11,7 +11,7 @@ harringtonine libraries (`ribokit starts`).
 ```bash
 mamba env create -p .env -f environment.yml
 .env/bin/pip install --no-deps -e .
-.env/bin/python -m pytest          # 45 tests on synthetic data with known truth
+.env/bin/python -m pytest          # 46 tests on synthetic data with known truth
 ```
 
 ## Use
@@ -112,7 +112,7 @@ tested. How it works and how to read it: [docs/starts.md](docs/starts.md).
 | `<prefix>.catalogue.tsv` | with `--scan`: the uORFs and uoORFs of the called starts, and every annotated CDS with its start evidence; the columns of `start_orfs.tsv`. An ORF table for `ribokit orfs --orfs`. |
 | `<prefix>.kernel.tsv` | per pool, read length and nt from the annotated start (-15 to +32): harringtonine and elongation P-sites, and the kernel (harringtonine minus scaled elongation, as a share). |
 | `<prefix>.factors.tsv` | per pool: the harringtonine / elongation factor of each bin of region and distance. |
-| `<prefix>.starts_stats.tsv` | the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. |
+| `<prefix>.starts_stats.tsv` | the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. With `--scan`, the overdispersion is the second one, and `null_windows_near_called` is the number of null windows dropped near the starts of the first call. |
 
 ## Method, in short
 
@@ -160,7 +160,8 @@ tested. How it works and how to read it: [docs/starts.md](docs/starts.md).
 12. **The test.** Per start, the harringtonine P-sites in nt -1 to +2 of its
     codon against the expected, negative binomial, with a gamma prior on the
     window's elongation rate and an overdispersion calibrated on the null
-    codons.
+    codons. A scan calibrates it twice: the second time without the null
+    codons in the window and codons 1-10 of the starts of a first call.
 13. **The scan.** Start codons with the smallest p first; a start is called
     if it passes BH and no called start within 8 nt or 10 codons upstream
     stops it. Each called start gives an ORF to its first in-frame stop.
