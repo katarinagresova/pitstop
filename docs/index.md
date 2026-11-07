@@ -1,10 +1,10 @@
-# ribokit
+# pitstop
 
 A Python Ribo-seq toolkit, deterministic from end to end: P-site offset
 estimation and CDS-level quantification from transcriptome alignments
-(`ribokit quant`), reading-frame evidence for uORFs and other ORFs besides
-the CDS (`ribokit orfs` / `ribokit score`), and translation start sites from
-harringtonine libraries, with a uORF catalogue from them (`ribokit starts`).
+(`pitstop quant`), reading-frame evidence for uORFs and other ORFs besides
+the CDS (`pitstop orfs` / `pitstop score`), and translation start sites from
+harringtonine libraries, with a uORF catalogue from them (`pitstop starts`).
 
 ## Why
 
@@ -13,12 +13,12 @@ that actually converges from a fixed, deterministic start, and P-site offsets
 estimated per read length from the data rather than assumed. Counting evidence for a
 uORF additionally needs a reading frame that isn't thrown away before it's
 checked, and a null that accounts for the host CDS's own off-frame noise.
-ribokit does all of this, benchmarked against real runs rather than
+pitstop does all of this, benchmarked against real runs rather than
 simulation alone.
 
 ## Get started
 
-- **Install and run**: see the [README](https://github.com/katarinagresova/ribokit#readme)
+- **Install and run**: see the [README](https://github.com/katarinagresova/pitstop#readme)
   for setup, the CLI, and output file formats.
 - **[Method: quant](method.md)**: how offsets, P-site assignment, and
   quantification work, with interactive examples.
@@ -32,5 +32,5 @@ simulation alone.
 
 ## License
 
-Apache License 2.0, see [LICENSE](https://github.com/katarinagresova/ribokit/blob/main/LICENSE)
-and [NOTICE](https://github.com/katarinagresova/ribokit/blob/main/NOTICE).
+Apache License 2.0, see [LICENSE](https://github.com/katarinagresova/pitstop/blob/main/LICENSE)
+and [NOTICE](https://github.com/katarinagresova/pitstop/blob/main/NOTICE).

@@ -1,4 +1,4 @@
-// Score explorer: ribokit's codon lead score (ribokit.score) on one simulated ORF.
+// Score explorer: pitstop's codon lead score (pitstop.score) on one simulated ORF.
 (function () {
   "use strict";
   const NS = "http://www.w3.org/2000/svg";

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 446" width="780" height="446" font-family="Roboto, Helvetica Neue, Arial, sans-serif" font-size="13" fill="#263238">
-<!-- generated from a run of the worked example: tests/synth.py make_orf_dataset(seed 2, background_under_orfs=True), ribokit orfs with read lengths 28-30, codons.tsv summed over 28-30 nt -->
+<!-- generated from a run of the worked example: tests/synth.py make_orf_dataset(seed 2, background_under_orfs=True), pitstop orfs with read lengths 28-30, codons.tsv summed over 28-30 nt -->
 <rect width="780" height="446" fill="white"/>
 <rect x="60.0" y="14.0" width="14.0" height="10.0" fill="#2a9d8f" rx="1"/>
 <text x="80.0" y="23.0" text-anchor="start" font-size="11" fill="#546e7a" font-weight="normal" font-style="normal">frame 0 (this ORF's)</text>
