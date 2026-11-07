@@ -13,7 +13,7 @@ dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.1", "pysam>=0.22"]
 pitstop = "pitstop.cli:main"
 
 [project.optional-dependencies]
-docs = ["mkdocs-material"]
+docs = ["zensical; python_version >= '3.11'"]  # zensical needs Python 3.11+
 
 [tool.setuptools.dynamic]
 version = {attr = "pitstop.__version__"}
