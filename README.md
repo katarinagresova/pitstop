@@ -1,12 +1,15 @@
+<div align="center">
+
 [![tests](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml/badge.svg)](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml)
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
 [![docs](https://img.shields.io/badge/docs-online-E5412D)](https://katarinagresova.github.io/pitstop/)
 
-<img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="220" align="left">
+<img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300">
 
 **From Ribo-seq reads to translation: how much each gene is translated, which
 upstream ORFs are translated, and where translation starts.**
-<br clear="left">
+
+</div>
 
 pitstop is a Python toolkit for ribosome profiling (Ribo-seq). Give it
 footprints aligned to the transcriptome, and it gives you plain tables to take
