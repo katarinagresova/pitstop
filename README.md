@@ -1,22 +1,28 @@
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pitstop-lockup-dark.svg">
-    <img alt="pitstop" src="docs/assets/pitstop-lockup.svg" width="320">
-  </picture>
-</h1>
+<div align="center">
 
 [![tests](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml/badge.svg)](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml)
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
 [![docs](https://img.shields.io/badge/docs-online-E5412D)](https://katarinagresova.github.io/pitstop/)
 
-**From Ribo-seq reads to translation: how much each gene is translated, which
-upstream ORFs are translated, and where translation starts.**
+<p><picture><img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300" align="top"></picture></p>
+
+**Ribo-seq reads in, translation out.**
+
+</div>
+
+<picture>
+<img alt="pitstop at a glance: reading frames drawn as the three lanes of a race track. Ribosomes keep to their ORF's lane, so a uORF whose reads stay in its frame is translated (pitstop orfs + score); harringtonine holds ribosomes on start codons (pitstop starts); reads are counted per coding sequence (pitstop quant)." src="docs/assets/pitstop-abstract-auto.svg" width="100%">
+</picture>
 
 pitstop is a Python toolkit for ribosome profiling (Ribo-seq). Give it
 footprints aligned to the transcriptome, and it gives you plain tables to take
 straight into your analysis.
 
 ## What it does
+
+<picture>
+<img alt="One transcript with a uORF (CUG start) and a CDS (AUG start), and two read tracks above it. Harringtonine reads peak at both start codons, above what the Ribo-seq reads predict (pitstop starts). Ribo-seq P-sites are coloured by reading frame: on the uORF most keep the uORF's frame (pitstop orfs + score), on the CDS the CDS's frame (pitstop quant)." src="docs/assets/pitstop-transcript-auto.svg" width="100%">
+</picture>
 
 | Question | Command | You get |
 |---|---|---|
@@ -32,7 +38,9 @@ straight into your analysis.
   score allows for the off-frame noise of the coding sequence they overlap.
 - **Reproducible.** No random numbers anywhere: the same input gives the same
   output, byte for byte.
-- **Checked on real data**, not only on simulations. The docs show how.
+- **Checked on real data**, not only on simulations: see how the
+  [uORF scores](https://katarinagresova.github.io/pitstop/orfs/#validation-on-real-data) and
+  [start sites](https://katarinagresova.github.io/pitstop/starts/#validation-on-real-data) hold up.
 
 ## Install
 
@@ -62,7 +70,7 @@ score the ORFs over all of them:
 ```bash
 pitstop orfs --bam rep1.bam --gtf annotation.gtf --fasta genome.fa \
     --read-lengths 18-30 --orfs candidates.tsv --out-prefix out/rep1
-# the same for rep2, with --offsets out/rep1.offsets.tsv
+# the same for rep2, with --offsets out/rep1.offsets.tsv: libraries scored together share one offsets table
 pitstop score --orfs-prefix out/rep1 out/rep2 --out-prefix out/pooled
 ```
 
@@ -74,9 +82,10 @@ from harringtonine libraries, see [Usage](https://katarinagresova.github.io/pits
 **[katarinagresova.github.io/pitstop](https://katarinagresova.github.io/pitstop/)**
 
 - [Usage](https://katarinagresova.github.io/pitstop/usage/): every command, input format and output column
-- [Method: quant](https://katarinagresova.github.io/pitstop/method/), [ORF counting](https://katarinagresova.github.io/pitstop/orfs/) and
-  [start sites](https://katarinagresova.github.io/pitstop/starts/): how each step works, with interactive examples
-  and validation on real data
+- [Method: quant](https://katarinagresova.github.io/pitstop/method/): offsets, assignment and the EM, with interactive examples
+- [Method: ORF counting](https://katarinagresova.github.io/pitstop/orfs/): the frame score, with an interactive example and
+  validation on real data
+- [Method: start sites](https://katarinagresova.github.io/pitstop/starts/): the harringtonine test, with validation on real data
 
 ## License
 

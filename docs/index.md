@@ -1,10 +1,27 @@
+---
+hide:
+  - toc
+---
+
 # pitstop
 
-A Python Ribo-seq toolkit, deterministic from end to end: P-site offset
-estimation and CDS-level quantification from transcriptome alignments
-(`pitstop quant`), reading-frame evidence for uORFs and other ORFs besides
-the CDS (`pitstop orfs` / `pitstop score`), and translation start sites from
-harringtonine libraries, with a uORF catalogue from them (`pitstop starts`).
+**Ribo-seq reads in, translation out.**
+
+![pitstop at a glance: reading frames drawn as the three lanes of a race track. Ribosomes keep to their ORF's lane, so a uORF whose reads stay in its frame is translated (pitstop orfs + score); harringtonine holds ribosomes on start codons (pitstop starts); reads are counted per coding sequence (pitstop quant).](assets/pitstop-abstract.svg)
+
+pitstop is a Python toolkit for ribosome profiling (Ribo-seq). Give it
+footprints aligned to the transcriptome, and it gives you plain tables to take
+straight into your analysis.
+
+## What it does
+
+![One transcript with a uORF (CUG start) and a CDS (AUG start), and two read tracks above it. Harringtonine reads peak at both start codons, above what the Ribo-seq reads predict (pitstop starts). Ribo-seq P-sites are coloured by reading frame: on the uORF most keep the uORF's frame (pitstop orfs + score), on the CDS the CDS's frame (pitstop quant).](assets/pitstop-transcript.svg)
+
+| Question | Command | You get |
+|---|---|---|
+| How much is each coding sequence translated? | `pitstop quant` | reads per CDS, with reads shared by isoforms or paralogs split between them |
+| Which uORFs and other small ORFs are translated? | `pitstop orfs`, `pitstop score` | for each ORF in your table, how strongly its reads follow its reading frame, with a p-value |
+| Where does translation start? | `pitstop starts` | start sites at ATG and near-cognate codons from harringtonine libraries, and a uORF catalogue from them |
 
 ## Why
 
