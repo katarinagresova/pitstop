@@ -1,21 +1,21 @@
 # Method
 
-`ribokit quant` turns ribosome footprints aligned to a transcriptome into
+`pitstop quant` turns ribosome footprints aligned to a transcriptome into
 expected read counts per coding sequence (CDS). For every read it answers three
 questions:
 
 1. **Where was the ribosome?** The footprint's 5′ end is not the codon being
-   translated. ribokit estimates, from the data, how far the P-site codon sits
+   translated. pitstop estimates, from the data, how far the P-site codon sits
    from the 5′ end (the *P-site offset*).
 2. **Was it translating a CDS?** A read counts for a CDS only if its P-site is
    inside that CDS, not merely if the read overlaps it.
-3. **Which CDS?** A read can fit several CDSs (isoforms, paralogs). ribokit
+3. **Which CDS?** A read can fit several CDSs (isoforms, paralogs). pitstop
    splits such reads by expectation-maximisation (EM), in proportion to each
    CDS's density of ribosomes, accelerated so that near-identical CDSs don't
    take forever to split ([step 6](#6-em)).
 
-This page covers `ribokit quant`. For uORFs and other ORFs besides the CDS,
-see [ORF counting and frame scores](orfs.md) (`ribokit orfs` / `ribokit score`).
+This page covers `pitstop quant`. For uORFs and other ORFs besides the CDS,
+see [ORF counting and frame scores](orfs.md) (`pitstop orfs` / `pitstop score`).
 
 ## At a glance
 
@@ -32,7 +32,7 @@ flowchart TB
     em --> out[/"quant.tsv · offsets.tsv · ties.tsv · stats.tsv · psites.tsv · qc.tsv"/]
 ```
 
-| Problem | What ribokit does |
+| Problem | What pitstop does |
 |---|---|
 | The P-site sits about 12 nt from a footprint's 5′ end, and the exact distance depends on footprint length and trimming. | Estimates one offset per read length and phase from the reads that span the start codon or the last sense codon ([step 3](#3-p-site-offsets)). |
 | Footprints that overlap a CDS were not all made by ribosomes translating it, e.g. ribosomes in the 5′ UTR next to the start codon. | Counts a read for a CDS only if its P-site is inside it ([step 4](#4-assignment)). |
@@ -43,7 +43,7 @@ flowchart TB
 
 ## 1. Annotation
 
-ribokit reads the `exon` and `CDS` features of the GTF and keeps one CDS per
+pitstop reads the `exon` and `CDS` features of the GTF and keeps one CDS per
 transcript, in transcript coordinates (0-based):
 
 <figure markdown="span">
@@ -55,10 +55,10 @@ transcript, in transcript coordinates (0-based):
 </figure>
 
 - **Stop codon in or out?** GTFs differ on whether the CDS feature includes the
-  stop codon. ribokit decides by majority vote over all CDSs whose length is a
+  stop codon. pitstop decides by majority vote over all CDSs whose length is a
   multiple of 3: is the last annotated codon a stop, or the codon after it? If
   neither holds for most CDSs, the FASTA probably does not belong to the GTF,
-  and ribokit stops with an error.
+  and pitstop stops with an error.
 - **Dropped CDSs:** length not a multiple of 3; no stop codon after the last
   codon; CDS not contiguous in the transcript. Non-ATG starts are kept.
 - The BAM's reference lengths must match the transcript lengths from the GTF.
@@ -102,7 +102,7 @@ $$
 
 A P-site lands on the first nucleotide of a codon exactly when
 $(d + \text{phase}) \bmod 3 = 0$. So the offset depends on the footprint length
-*and* the phase, and ribokit estimates one offset for every (length, phase) class.
+*and* the phase, and pitstop estimates one offset for every (length, phase) class.
 
 ### CDS inclusion
 
@@ -116,16 +116,16 @@ start codon or the last sense codon**:
 - an offset that is too long moves the P-sites of ribosomes on the last codon
   past the end of the CDS.
 
-ribokit scores each candidate offset by the number of reads whose P-site it
+pitstop scores each candidate offset by the number of reads whose P-site it
 puts inside the CDS (a read with *n* alignments counts 1/*n* at each). The reads
 that cover the first nt of the start codon or of the last sense codon are the
 class's *support*.
 
 ### One window per read length
 
-ribokit does not choose the three phases of a read length independently.
+pitstop does not choose the three phases of a read length independently.
 Footprints of the same length but different phase differ by a nucleotide of
-trimming at each end, so ribokit requires their offsets to be **three
+trimming at each end, so pitstop requires their offsets to be **three
 consecutive numbers** $c-1, c, c+1$. Each of the three goes to the phase it puts
 in frame:
 
@@ -137,7 +137,7 @@ in frame:
   any window of three consecutive offsets gives exactly one to each phase.</figcaption>
 </figure>
 
-For each read length, ribokit sums the three phases' scores for every window
+For each read length, pitstop sums the three phases' scores for every window
 centre $c$ and keeps the best window; on a tie, the smaller $c$. The P-site codon
 must leave room for an E-site codon before it and an A-site codon after it in
 the read, so $3 \le d \le \text{length} - 6$.
@@ -245,7 +245,7 @@ more reads overall.
 
 ### The iteration
 
-ribokit iterates on expected reads per CDS, $\alpha_t$. It starts from an even
+pitstop iterates on expected reads per CDS, $\alpha_t$. It starts from an even
 split of every shared read over its CDSs, with no randomness:
 
 $$
@@ -261,14 +261,14 @@ $$
 
 It stops when one of these steps moves no $\alpha_t$ by `--tol` reads or more
 (default 0.001). If that has not happened after `--max-iter` steps (default
-100 000), ribokit stops with an error instead of writing unconverged numbers.
+100 000), pitstop stops with an error instead of writing unconverged numbers.
 
 ### Acceleration
 
 Taken step by step, this creeps: two CDSs that are hard to tell apart close
 only a small, roughly constant fraction of the remaining gap per step, so
 near-ties can need tens of thousands of plain EM steps or more (`tests/` has
-one that needs 138,000). ribokit instead runs [SQUAREM](#references)
+one that needs 138,000). pitstop instead runs [SQUAREM](#references)
 (scheme S3), which extrapolates past a pair of plain EM steps to where they
 are heading, instead of taking them one at a time:
 
@@ -312,7 +312,7 @@ With **A and B are identical**, no setting changes the 50:50 split.
     A is 900 nt, B is 600 nt and lies entirely inside A, and both have 1 read
     per nt. Then 300 reads fit only A and 1,200 fit both. The truth is A = 900,
     B = 600 (60:40). The EM with $1/L_t$ converges to exactly that. Without it,
-    the likelihood is maximal when B gets nothing. ribokit's tests check this
+    the likelihood is maximal when B gets nothing. pitstop's tests check this
     case.
 
 ### Ties
@@ -324,7 +324,7 @@ split comes from the model, not from the data. CDSs of the same length keep the
 EM's even start. Of CDSs of different lengths, the shortest gets almost all the
 reads: the same reads are denser on a shorter CDS, so each EM step multiplies
 a longer CDS's count, relative to a shorter one's, by
-$L_\text{short} / L_\text{long}$. ribokit lists them in `ties.tsv` (`Name`,
+$L_\text{short} / L_\text{long}$. pitstop lists them in `ties.tsv` (`Name`,
 `tie_group`) so that you can sum them or analyse them as a group.
 
 ## 7. Outputs
@@ -352,7 +352,7 @@ library, they can be used directly for spike-in normalisation.
 
 ## Worked example
 
-ribokit's tests run on a small synthetic dataset with known truth
+pitstop's tests run on a small synthetic dataset with known truth
 (`tests/synth.py`): six CDSs on four genes plus a non-coding transcript, footprints of 28–30 nt with planted
 offsets, start and stop peaks, UTR footprints, soft clips, reads with a
 deletion, and reads of the wrong length.

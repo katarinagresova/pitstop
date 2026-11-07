@@ -1,7 +1,7 @@
-site_name: ribokit
+site_name: pitstop
 site_description: Ribo-seq analysis in Python
-site_url: https://katarinagresova.github.io/ribokit/
-repo_url: https://github.com/katarinagresova/ribokit
+site_url: https://katarinagresova.github.io/pitstop/
+repo_url: https://github.com/katarinagresova/pitstop
 docs_dir: docs
 nav:
   - Home: index.md

@@ -1,4 +1,4 @@
-// Offset explorer: ribokit's CDS-inclusion window search on simulated reads of one length.
+// Offset explorer: pitstop's CDS-inclusion window search on simulated reads of one length.
 (function () {
   "use strict";
   const NS = "http://www.w3.org/2000/svg";

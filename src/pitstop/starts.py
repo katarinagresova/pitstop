@@ -454,7 +454,7 @@ def near_starts(pos, p, passing, annotated=()):
 
 def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_lengths=None, start_codons=None,
         fdr=FDR):
-    """Start evidence from the `ribokit orfs` runs of a library sheet (TSV pool, harringtonine, elongation:
+    """Start evidence from the `pitstop orfs` runs of a library sheet (TSV pool, harringtonine, elongation:
     out prefixes, one row per replicate), for the starts of an ORF table and the annotated starts, or for every
     start codon (of `start_codons`, default START_CODONS) with harringtonine reads (scan: also the starts called
     at q < fdr and their ORFs)."""

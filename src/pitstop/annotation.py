@@ -79,7 +79,7 @@ def _open_fasta(path):
     """pysam.FastaFile, indexing a copy in a temp dir if there is no .fai beside it."""
     if os.path.exists(path + ".fai"):
         return pysam.FastaFile(path)
-    tmp = tempfile.mkdtemp(prefix="ribokit_fai_")
+    tmp = tempfile.mkdtemp(prefix="pitstop_fai_")
     fai = os.path.join(tmp, os.path.basename(path) + ".fai")
     log.info("no %s.fai, indexing into %s", path, tmp)
     pysam.faidx(path, "--fai-idx", fai)

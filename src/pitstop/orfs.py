@@ -241,7 +241,7 @@ def run(bam_path, gtf, fasta, lengths, out_prefix, orfs_path=None, offsets_path=
                  components_in_ties=sum(len(g) for g in ties))
     stats.update({f"numreads_{t}": float(alpha[comps["type"].to_numpy() == t].sum()) for t in ORF_TYPES + OUTSIDE_TYPES})
 
-    # for `ribokit score`: P-sites per codon, frame and length of each ORF but the annotated CDSs,
+    # for `pitstop score`: P-sites per codon, frame and length of each ORF but the annotated CDSs,
     # one count per alignment. Codon n is the stop codon: the +1 and +2 nt decoys reach into it.
     sel = np.flatnonzero(orfs["type"].to_numpy() != "CDS")
     ci, ck = orf_hits(aln.ref, psite, orf_ref[sel], start[sel], orfs["end"].to_numpy()[sel] + 3)

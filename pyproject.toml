@@ -3,20 +3,20 @@ requires = ["setuptools>=77"]  # SPDX `license` string (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ribokit"
+name = "pitstop"
 dynamic = ["version"]
 license = "Apache-2.0"
 requires-python = ">=3.14"
 dependencies = ["numpy", "scipy", "pandas", "pysam"]
 
 [project.scripts]
-ribokit = "ribokit.cli:main"
+pitstop = "pitstop.cli:main"
 
 [project.optional-dependencies]
 docs = ["mkdocs-material"]
 
 [tool.setuptools.dynamic]
-version = {attr = "ribokit.__version__"}
+version = {attr = "pitstop.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

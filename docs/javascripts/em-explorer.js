@@ -1,4 +1,4 @@
-// EM explorer: ribokit's EM on two components that share reads. #em-explorer (method.md): two CDSs, with and
+// EM explorer: pitstop's EM on two components that share reads. #em-explorer (method.md): two CDSs, with and
 // without the 1/L term. #em-explorer-frame (orfs.md): a uoORF over its CDS's start, with and without the frame term.
 (function () {
   "use strict";
@@ -58,9 +58,9 @@
              truth: [rho[0] * (own + ov), rho[1] * (ov + cds) + peak] };
   }
 
-  // Plain EM step, as in ribokit.quant.em: even start, then alpha_t = u_t + sum_c n_c w_t / sum_{s in c} w_s, w = alpha / L
+  // Plain EM step, as in pitstop.quant.em: even start, then alpha_t = u_t + sum_c n_c w_t / sum_{s in c} w_s, w = alpha / L
   // (times the class weight f, if the class has one).
-  // `ribokit quant` accelerates this with SQUAREM (method.md, "Acceleration"); shown here unaccelerated, step by step.
+  // `pitstop quant` accelerates this with SQUAREM (method.md, "Acceleration"); shown here unaccelerated, step by step.
   function em(m, useLength) {
     const len = useLength ? m.L : [1, 1];
     let alpha = m.unique.slice();
@@ -224,7 +224,7 @@
       } else if (done) {
         if (q("sc").value === "tie") {
           s += " No read tells A and B apart, so the EM keeps its even starting split whatever the true densities:" +
-               " ribokit lists such CDSs in <code>ties.tsv</code>.";
+               " pitstop lists such CDSs in <code>ties.tsv</code>.";
         } else if (!q("len").checked) {
           s += " Without 1/L, the shared reads end up split in proportion to each CDS's own reads, however long" +
                " its own part is, not by density.";

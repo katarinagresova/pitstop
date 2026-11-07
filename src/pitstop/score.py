@@ -1,4 +1,4 @@
-"""Frame evidence along an ORF: the codon lead score, from `ribokit orfs` outputs.
+"""Frame evidence along an ORF: the codon lead score, from `pitstop orfs` outputs.
 
 Votes. Every codon of an ORF but its start codon votes, from the P-sites of the score lengths in its
 3 nt (codons.tsv, summed over libraries; each alignment counts 1). It leads when more of them are in
@@ -166,7 +166,7 @@ def run(prefixes, out_prefix, frame_lengths=None):
         lengths = list(range(frame_lengths[0], frame_lengths[1] + 1))
     for _, _, f in libraries:
         if not set(lengths) <= set(f["length"]):
-            raise ValueError(f"score lengths {lengths} are not all in the read length window of `ribokit orfs`")
+            raise ValueError(f"score lengths {lengths} are not all in the read length window of `pitstop orfs`")
     log.info("score lengths: %s", lengths)
     scores, decoys, st = score(libraries, lengths)
     log.info("%s", st)

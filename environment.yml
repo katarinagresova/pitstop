@@ -1,6 +1,6 @@
 # Pinned to the versions the tests ran with.
 # Create: mamba env create -p .env -f environment.yml && .env/bin/pip install --no-deps -e .
-name: ribokit
+name: pitstop
 channels:
   - conda-forge
   - bioconda

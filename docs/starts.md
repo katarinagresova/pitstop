@@ -1,6 +1,6 @@
 # Start sites from harringtonine
 
-`ribokit starts` finds translation start sites from harringtonine (or
+`pitstop starts` finds translation start sites from harringtonine (or
 lactimidomycin) Ribo-seq libraries. It compares each harringtonine library
 with an elongation library of the same condition and replicate, tests given
 starts or every start codon of the transcriptome, calls starts, and writes
@@ -34,7 +34,7 @@ P-sites at the same position predict.
 
 ## Inputs
 
-`starts` reads the outputs of `ribokit orfs` runs
+`starts` reads the outputs of `pitstop orfs` runs
 ([ORF counting](orfs.md)), one per library, and a library sheet:
 
 ```text
@@ -52,20 +52,20 @@ their evidence adds up.
 
 The libraries of a pool must have the same P-site offsets, or their P-sites
 are not comparable. Give each `orfs` run of a pool the offsets of
-`ribokit quant` on the pool's harringtonine BAMs, merged into one
+`pitstop quant` on the pool's harringtonine BAMs, merged into one
 (`--offsets`). The libraries also need the same transcripts: give them the
 same GTF. Transcripts that are not in every `orfs` run are left out.
 
 ```bash
 samtools cat -o harr_control.bam harr_control_rep1.bam harr_control_rep2.bam
-ribokit quant --bam harr_control.bam --gtf annotation.gtf --fasta genome.fa \
+pitstop quant --bam harr_control.bam --gtf annotation.gtf --fasta genome.fa \
     --read-lengths 18-30 --out-prefix out/control
 for lib in harr_control_rep1 harr_control_rep2 elong_control_rep1 elong_control_rep2; do
-    ribokit orfs --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
+    pitstop orfs --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
         --read-lengths 18-30 --offsets out/control.offsets.tsv --out-prefix out/$lib
 done
 # the same for the treated pool, with its own offsets
-ribokit starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa \
+pitstop starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa \
     --scan --out-prefix out/starts
 ```
 
@@ -191,14 +191,14 @@ start), `uoORF` (starts before the CDS, out of frame, ends in it), `extension`
 frame), `internal` (inside the CDS, out of frame), `dORF` (after the CDS) or
 `other` (no annotated CDS). `start_orfs.tsv` has them, but the annotated CDSs.
 `catalogue.tsv` has the uORFs and uoORFs, and every annotated CDS with its
-start evidence. Both are ORF tables for `ribokit orfs --orfs`: count the
+start evidence. Both are ORF tables for `pitstop orfs --orfs`: count the
 catalogue's ORFs in other libraries, and score their frames with
-`ribokit score`.
+`pitstop score`.
 
 ## Reading the results
 
 - **A call is start evidence, not translation evidence.** It says that
-  ribokit found ribosomes stopped on that codon by harringtonine. Whether
+  pitstop found ribosomes stopped on that codon by harringtonine. Whether
   ribosomes go on to elongate is a frame question: `orfs` and `score` on the
   ORF table.
 - **Power depends on the elongation reads.** A start with few elongation reads

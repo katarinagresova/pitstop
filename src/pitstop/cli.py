@@ -39,7 +39,7 @@ def add_shared(sp, outputs):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="ribokit")
+    p = argparse.ArgumentParser(prog="pitstop")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
     q = sub.add_parser("quant", help="P-site offsets and CDS quantification from a transcriptome BAM")
@@ -51,17 +51,17 @@ def main(argv=None):
     o.add_argument("--orfs", help="ORF table, TSV with columns ORF_id Name start end (0-based transcript "
                                   "coordinates: start = first nt of the start codon, end = one past the last "
                                   "sense codon). The annotated CDSs are added")
-    s = sub.add_parser("score", help="frame evidence per ORF (codon lead), pooled over `ribokit orfs` runs")
+    s = sub.add_parser("score", help="frame evidence per ORF (codon lead), pooled over `pitstop orfs` runs")
     s.add_argument("--orfs-prefix", nargs="+", required=True, metavar="PREFIX",
-                   help="out prefixes of `ribokit orfs` runs with the same ORF table; their codons are summed")
+                   help="out prefixes of `pitstop orfs` runs with the same ORF table; their codons are summed")
     s.add_argument("--out-prefix", required=True, help="writes <prefix>.scores.tsv, .decoys.tsv, .score_stats.tsv")
     s.add_argument("--frame-lengths", type=read_lengths, metavar="LO-HI",
                    help=f"read lengths that vote (default: those with a frame-0 share >= {score.MIN_FRAME0} "
                         "in every library)")
     t = sub.add_parser("starts", help="start evidence: harringtonine P-sites against matched elongation P-sites, "
-                                      "from `ribokit orfs` runs")
+                                      "from `pitstop orfs` runs")
     t.add_argument("--libraries", required=True,
-                   help="TSV with columns pool, harringtonine, elongation: out prefixes of `ribokit orfs` runs, one "
+                   help="TSV with columns pool, harringtonine, elongation: out prefixes of `pitstop orfs` runs, one "
                         "row per replicate (a harringtonine library and its matched elongation library)")
     t.add_argument("--gtf", required=True)
     t.add_argument("--fasta", required=True, help="genome FASTA of the GTF")

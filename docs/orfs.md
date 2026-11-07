@@ -1,6 +1,6 @@
 # ORF counting and frame scores
 
-`ribokit orfs` and `ribokit score` count reads on ORFs other than the
+`pitstop orfs` and `pitstop score` count reads on ORFs other than the
 annotated CDS — upstream ORFs (uORFs), ORFs overlapping the CDS out of frame
 (uoORFs), and others — and turn those counts into evidence of translation.
 Where `quant` only has to decide *which* CDS a read belongs to, these commands
@@ -29,10 +29,10 @@ between conditions.
 
 **Start codons and other ORFs.** Many uORFs start on a near-cognate codon —
 CUG, GUG or UUG — rather than AUG ([Ingolia et al. 2009, 2011](#references)),
-so ribokit takes start codons as given and does not check them. Besides
+so pitstop takes start codons as given and does not check them. Besides
 uORFs and uoORFs, a catalogue can hold ORFs on transcripts with no annotated
 CDS, ORFs downstream of or inside the CDS, and in-frame N-terminal extensions
-of it; ribokit types all of these `other` ([step 1](#1-the-orf-table)).
+of it; pitstop types all of these `other` ([step 1](#1-the-orf-table)).
 
 **Ribo-seq and the reading frame.** Ribosome profiling (Ribo-seq) sequences
 the stretch of mRNA, about 30 nt, that each ribosome protects from nuclease:
@@ -68,7 +68,7 @@ codons ([Ingolia et al. 2011](#references)), raises the AUG peak but not the
 CUG's: with it, the AUG has 11-19x the CUG's P-sites, without it about as
 many ([A peak is not a uORF](#a-peak-is-not-a-uorf)).
 
-**What ribokit does and does not do.** ribokit does not find ORFs. It takes a
+**What pitstop does and does not do.** pitstop does not find ORFs. It takes a
 catalogue (`--orfs`) — from an ORF caller such as RiboTaper
 ([Calviello et al. 2016](#references)), PRICE
 ([Erhard et al. 2018](#references)), RiboCode ([Xiao et al. 2018](#references)),
@@ -78,7 +78,7 @@ for every ORF in it counts the reads with their frame (`orfs`) and scores the
 frame evidence, pooled over libraries (`score`). It does not test where
 ribosomes start: start sites need Ribo-seq with an initiation inhibitor, such
 as harringtonine ([Ingolia et al. 2011](#references)) or lactimidomycin
-([Lee et al. 2012](#references)), which ribokit does not use. A call says that
+([Lee et al. 2012](#references)), which pitstop does not use. A call says that
 ribosomes elongate in the ORF's frame, not that they start at its start codon.
 
 ## At a glance
@@ -94,11 +94,11 @@ flowchart TB
     profile --> em["4 · EM with a frame term"]
     comps --> em
     em --> orfsout[/"orfs.tsv · frames.tsv · codons.tsv · …"/]
-    orfsout --> scorestep["5 · Codon lead score (ribokit score)"]
+    orfsout --> scorestep["5 · Codon lead score (pitstop score)"]
     scorestep --> scoresout[/"scores.tsv · decoys.tsv"/]
 ```
 
-| Problem | What ribokit does |
+| Problem | What pitstop does |
 |---|---|
 | A footprint's P-site offset depends on its length and phase; snapping every phase onto the CDS (as `quant` does) erases any other reading frame a read might be in. | Uses one offset per read length (the untrimmed phase), so every P-site keeps the frame it was sequenced in ([step 3](#3-frame-true-p-sites-and-the-frame-profile)). |
 | A footprint that merely overlaps an ORF's span was not necessarily made by a ribosome translating it. | Counts a codon as evidence only if ribosomes keep landing in that ORF's own reading frame ([step 5](#5-the-codon-lead-score)). |
@@ -108,7 +108,7 @@ flowchart TB
 
 ## 1. The ORF table
 
-`--orfs` is the catalogue of ORFs to count; ribokit does not find ORFs
+`--orfs` is the catalogue of ORFs to count; pitstop does not find ORFs
 ([Background](#background)). It is a TSV with `ORF_id Name start end`, in
 the same transcript-coordinate convention as the annotated CDS (`start` =
 first nt of the start codon, `end` = one past the last sense codon; the stop
@@ -283,9 +283,9 @@ fades.
 
 ## 5. The codon lead score
 
-`ribokit orfs` writes `codons.tsv`: P-sites per codon of every ORF but the
+`pitstop orfs` writes `codons.tsv`: P-sites per codon of every ORF but the
 annotated CDSs (the annotated CDSs are assumed translated), by length and
-frame. `ribokit score` sums the `codons.tsv` of one or more `orfs` runs — e.g.
+frame. `pitstop score` sums the `codons.tsv` of one or more `orfs` runs — e.g.
 replicate libraries — and scores the pool, so per-library scores are calls
 with one `--orfs-prefix`. The runs must share one ORF table: if their
 `orfs.tsv` list different ORFs, `score` stops with an error.
@@ -489,16 +489,16 @@ For a comparison of two conditions with several libraries each:
 
 ```bash
 # one library without --offsets: its offsets.tsv becomes the shared table
-ribokit orfs --bam ctrl_1.bam --gtf annotation.gtf --fasta genome.fa \
+pitstop orfs --bam ctrl_1.bam --gtf annotation.gtf --fasta genome.fa \
     --read-lengths 18-30 --orfs candidates.tsv --out-prefix out/ctrl_1
 # every other library with the same GTF, ORF table and offsets
 for s in ctrl_2 ctrl_3 treat_1 treat_2 treat_3; do
-    ribokit orfs --bam $s.bam --gtf annotation.gtf --fasta genome.fa \
+    pitstop orfs --bam $s.bam --gtf annotation.gtf --fasta genome.fa \
         --read-lengths 18-30 --orfs candidates.tsv \
         --offsets out/ctrl_1.offsets.tsv --out-prefix out/$s
 done
 # one score over every library, both conditions
-ribokit score --orfs-prefix out/ctrl_{1,2,3} out/treat_{1,2,3} --out-prefix out/all
+pitstop score --orfs-prefix out/ctrl_{1,2,3} out/treat_{1,2,3} --out-prefix out/all
 ```
 
 1. **One GTF, one ORF table and one offsets table for every library.**
@@ -597,7 +597,7 @@ and `score` 10-25 s and 0.2-0.3 GB for 6-15 libraries.
 
 ## Worked example
 
-ribokit's ORF tests (`tests/synth.py`, `make_orf_dataset`) build five
+pitstop's ORF tests (`tests/synth.py`, `make_orf_dataset`) build five
 transcripts with CDSs, each carrying ORFs that exercise one design decision:
 
 - **U1**: a 21-codon ATG uORF with its own reads, an untranslated 16-codon ATG
@@ -620,7 +620,7 @@ transcripts with CDSs, each carrying ORFs that exercise one design decision:
   the bracketed part of U1's CDS, so reads there fit both.</figcaption>
 </figure>
 
-**Counts** (`ribokit orfs`, truth vs. `NumReads`):
+**Counts** (`pitstop orfs`, truth vs. `NumReads`):
 
 | ORF | type | truth | got |
 |---|---|---:|---:|
@@ -643,7 +643,7 @@ the rest: the peak reads have nowhere else to go, and the CDS's reads in its
 frame 1 are in the uoORF's frame 0. This is a known limit of the model, not a
 bug; the score below still does not call U4's uoORF.
 
-**Scores** (`ribokit score`, pooled over one library, with background reads
+**Scores** (`pitstop score`, pooled over one library, with background reads
 also landing inside every ORF span — a harder setting than the counts example
 above, needed to check that an untranslated candidate does not get a free
 pass). The synthetic reads have a weak frame — frame-0 shares of 0.48-0.67 at
@@ -674,13 +674,13 @@ CTG start-only peak and U4's uoORF are not. U2's and U3's uoORFs are
 translated, and their `min_p` (the best `p` their 49 voting codons could reach
 if every one led) is tiny — 1e-29 and 1e-26 — but their actual `p` is 0.12 and
 0.065 (`q` 0.19 and 0.13): at this depth, with a host CDS that outvotes them, not enough of their
-codons actually lead. `min_p` is how ribokit reports that gap between
+codons actually lead. `min_p` is how pitstop reports that gap between
 "could be called" and "was called", instead of leaving it silent.
 
 ## Validation on real data
 
 What `orfs` and `score` do on real Ribo-seq libraries, as numbers. The data
-are not shipped with ribokit; the numbers come from its validation runs.
+are not shipped with pitstop; the numbers come from its validation runs.
 
 ### The data
 
