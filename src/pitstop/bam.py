@@ -56,14 +56,16 @@ def _footprint_length(cigar):
     return aligned + three if aligned else None
 
 
-def read_bam(path, anno, stats):
-    """All forward alignments with an acceptable CIGAR. stats gets the read counts."""
+def read_bam(path, anno, stats, keep=None):
+    """All forward alignments with an acceptable CIGAR. stats gets the read counts. With `keep` (transcript
+    ids), alignments to other BAM references are counted but not kept: refs_not_in_gtf,
+    alignments_dropped_ref_not_in_gtf (those with an acceptable CIGAR). All other counts are as without `keep`."""
     index = anno.index()
     names, last, r = {}, None, -1
     cigar_ok = bytearray()   # per read: 1 if it has an alignment with an acceptable CIGAR
     fp_of = {}               # CIGAR string -> footprint length, 0 if not acceptable
     read, ref, pos5, length = array("q"), array("q"), array("q"), array("q")
-    n_bad_cigar_aln = 0
+    n_bad_cigar_aln = n_dropped = 0
     with pysam.AlignmentFile(path, "rb", check_sq=False) as bam:
         refs = [r.split("|", 1)[0] for r in bam.references]
         ref_tx = np.array([index.get(r, -1) for r in refs], dtype=np.int64)
@@ -78,6 +80,7 @@ def read_bam(path, anno, stats):
             raise ValueError(f"{bam.references[i]} is {ref_len[i]} nt in the BAM but "
                              f"{anno.tx_len[ref_tx[i]]} nt in the annotation; {bad.sum()} such transcripts")
         stats["cds_transcripts_in_bam_header"] = int(known.sum())
+        kept = [keep is None or t in keep for t in refs]
         for a in bam.fetch(until_eof=True):
             if a.flag & _SKIP:
                 continue
@@ -95,13 +98,20 @@ def read_bam(path, anno, stats):
                 n_bad_cigar_aln += 1
                 continue
             cigar_ok[r] = 1
+            i = a.reference_id
+            if not kept[i]:
+                n_dropped += 1
+                continue
             read.append(r)
-            ref.append(a.reference_id)
+            ref.append(i)
             pos5.append(a.reference_start)
             length.append(fp)
     stats["reads_forward"] = len(names)
     stats["alignments_dropped_cigar"] = n_bad_cigar_aln
     stats["reads_cigar_ok"] = cigar_ok.count(1)
+    if keep is not None:
+        stats["refs_not_in_gtf"] = kept.count(False)
+        stats["alignments_dropped_ref_not_in_gtf"] = n_dropped
     ref = np.frombuffer(ref, dtype=np.int64)
     aln = Alignments(np.frombuffer(read, dtype=np.int64), ref_tx[ref], np.frombuffer(pos5, dtype=np.int64),
                      np.frombuffer(length, dtype=np.int64), len(names), list(names), ref, refs)
