@@ -4,13 +4,15 @@
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
 [![docs](https://img.shields.io/badge/docs-online-E5412D)](https://katarinagresova.github.io/pitstop/)
 
-<p><img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300" align="top"></p>
+<p><picture><img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="300" align="top"></picture></p>
 
 **Ribo-seq reads in, translation out.**
 
 </div>
 
+<picture>
 <img alt="pitstop at a glance: reading frames drawn as the three lanes of a race track. Ribosomes keep to their ORF's lane, so a uORF whose reads stay in its frame is translated (pitstop orfs + score); harringtonine holds ribosomes on start codons (pitstop starts); reads are counted per coding sequence (pitstop quant)." src="docs/assets/pitstop-abstract-auto.svg" width="100%">
+</picture>
 
 pitstop is a Python toolkit for ribosome profiling (Ribo-seq). Give it
 footprints aligned to the transcriptome, and it gives you plain tables to take
@@ -18,7 +20,9 @@ straight into your analysis.
 
 ## What it does
 
+<picture>
 <img alt="One transcript with a uORF (CUG start) and a CDS (AUG start), and two read tracks above it. Harringtonine reads peak at both start codons, above what the Ribo-seq reads predict (pitstop starts). Ribo-seq P-sites are coloured by reading frame: on the uORF most keep the uORF's frame (pitstop orfs + score), on the CDS the CDS's frame (pitstop quant)." src="docs/assets/pitstop-transcript-auto.svg" width="100%">
+</picture>
 
 | Question | Command | You get |
 |---|---|---|
