@@ -1,3 +1,29 @@
+@import url("https://fonts.googleapis.com/css2?family=Saira+SemiExpanded:ital,wght@1,800&display=swap");
+
+/* Colours of the pitstop logo: ink #17181C, accent #E5412D. */
+:root > * {
+  --md-primary-fg-color: #17181C;
+  --md-primary-fg-color--light: #2E3036;
+  --md-primary-fg-color--dark: #0B0C0E;
+  --md-primary-bg-color: #FFFFFF;
+  --md-primary-bg-color--light: #FFFFFFB3;
+  --md-accent-fg-color: #E5412D;
+  --md-accent-fg-color--transparent: #E5412D1A;
+  --md-accent-bg-color: #FFFFFF;
+  --md-accent-bg-color--light: #FFFFFFB3;
+  /* the accent, darkened to 4.8:1 on white for text */
+  --md-typeset-a-color: #D23A27;
+}
+/* The site name as in the logo: its typeface, "pit" in ink, "stop" in the accent (wordmark.js). */
+.md-nav__title[for="__drawer"],
+.md-header__topic:first-child {
+  font-family: "Saira SemiExpanded", sans-serif;
+  font-style: italic;
+  font-weight: 800;
+  color: var(--md-primary-fg-color);
+}
+.rk-stop { color: var(--md-accent-fg-color); }
+
 .rk-widget {
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 6px;
@@ -28,3 +54,5 @@
 .md-typeset figure img { border: 1px solid var(--md-default-fg-color--lightest); border-radius: 4px; }
 /* MathJax's hidden copy for screen readers can be wider than the formula and widen the page on phones. */
 mjx-assistive-mml { max-width: 100%; }
+/* File names in the first column of output tables: one line each. */
+.md-typeset td:first-child code { white-space: nowrap; }
