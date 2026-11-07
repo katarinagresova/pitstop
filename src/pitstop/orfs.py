@@ -166,16 +166,13 @@ def run(bam_path, gtf, fasta, lengths, out_prefix, orfs_path=None, offsets_path=
     stats = {}
     anno = annotation.load_annotation(gtf, fasta)
     stats.update({f"annotation_{k}": v for k, v in anno.stats.items()})
-    aln = bam.read_bam(bam_path, anno, stats)
+    # BAM references that are not GTF transcripts are not counted. Dropped while reading, before anything
+    # counts a read's alignments (read_weights), so this is the run on a BAM without them.
+    gtf_ids = set(annotation.read_gtf(gtf))
+    aln = bam.read_bam(bam_path, anno, stats, keep=gtf_ids)
     with pysam.AlignmentFile(bam_path, "rb", check_sq=False) as f:
         ref_len = np.array(f.lengths, dtype=np.int64)
-    # BAM references that are not GTF transcripts are not counted. Dropped before anything counts a
-    # read's alignments (read_weights), so this is the run on a BAM without them.
-    gtf_ids = set(annotation.read_gtf(gtf))
     in_gtf = np.array([r in gtf_ids for r in aln.refs], dtype=bool)
-    keep = in_gtf[aln.ref]
-    stats.update(refs_not_in_gtf=int((~in_gtf).sum()), alignments_dropped_ref_not_in_gtf=int((~keep).sum()))
-    aln = aln.subset(keep)
     stats["reads_dropped_ref_not_in_gtf"] = stats["reads_cigar_ok"] - aln.count_reads()
     log.info("%d BAM references are not in the GTF: %d alignments dropped, %d reads with no other",
              stats["refs_not_in_gtf"], stats["alignments_dropped_ref_not_in_gtf"],
