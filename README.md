@@ -1,9 +1,4 @@
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pitstop-lockup-dark.svg">
-    <img alt="pitstop" src="docs/assets/pitstop-lockup.svg" width="320">
-  </picture>
-</h1>
+<h1><img alt="pitstop" src="docs/assets/pitstop-banner.svg" width="400"></h1>
 
 [![tests](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml/badge.svg)](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml)
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
