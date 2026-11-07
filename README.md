@@ -1,5 +1,8 @@
 # pitstop
 
+[![tests](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml/badge.svg)](https://github.com/katarinagresova/pitstop/actions/workflows/tests.yml)
+[![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/katarinagresova/pitstop/main/pyproject.toml)](pyproject.toml)
+
 Ribo-seq analysis in Python, deterministic from end to end: P-site offset
 estimation and CDS quantification from transcriptome alignments
 (`pitstop quant`), reading-frame evidence for uORFs and other non-CDS ORFs

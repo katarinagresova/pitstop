@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "pitstop"
 dynamic = ["version"]
 license = "Apache-2.0"
-requires-python = ">=3.14"
-dependencies = ["numpy", "scipy", "pandas", "pysam"]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.1", "pysam>=0.22"]
 
 [project.scripts]
 pitstop = "pitstop.cli:main"
