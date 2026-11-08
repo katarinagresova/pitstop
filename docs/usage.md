@@ -10,12 +10,8 @@ Every command reads transcriptome alignments and writes tab-separated tables,
 pip install git+https://github.com/katarinagresova/pitstop.git
 ```
 
-pitstop needs Python 3.10 or later, with numpy, scipy, pandas and pysam. The
-QC figures of `pitstop plot` also need matplotlib:
-
-```bash
-pip install "pitstop[plot] @ git+https://github.com/katarinagresova/pitstop.git"
-```
+pitstop needs Python 3.10 or later. pip also installs numpy, scipy, pandas,
+pysam and matplotlib.
 
 To run the tests, or to use the exact versions they ran with, use the conda
 environment instead:
@@ -138,8 +134,7 @@ it works and how to read it: [Start sites](starts.md).
 ## QC figures: `plot`
 
 `pitstop plot` draws the read-length QC of a `starts` run, from its
-`lengths.tsv` and `profiles.tsv`. It needs matplotlib (`pitstop[plot]`, see
-[Install](#install)).
+`lengths.tsv` and `profiles.tsv`.
 
 ```bash
 pitstop plot --prefix out/starts      # writes out/starts.lengths.pdf

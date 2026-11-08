@@ -129,7 +129,7 @@ ctrl    out/harr_2       out/elong_2
 ```bash
 pitstop starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa \
     --scan --out-prefix out/starts
-pitstop plot --prefix out/starts      # needs pitstop[plot]: out/starts.lengths.pdf
+pitstop plot --prefix out/starts      # out/starts.lengths.pdf
 ```
 
 `--scan` tests every ATG and near-cognate start codon with initiation reads,
