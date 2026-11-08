@@ -50,7 +50,7 @@ RC = {"font.family": "DejaVu Sans", "font.size": 7.5, "axes.labelsize": 7.5, "xt
       "xtick.major.width": 0.6, "ytick.major.width": 0.6, "xtick.major.size": 2.5, "ytick.major.size": 2.5,
       "text.color": C["ink"], "axes.spines.top": False, "axes.spines.right": False, "axes.facecolor": "none",
       "figure.facecolor": "none", "savefig.facecolor": "none", "savefig.edgecolor": "none", "svg.fonttype": "none",
-      "hatch.color": C["k-clean"], "hatch.linewidth": 0.8, "grid.color": C["grid"], "grid.linewidth": 0.6,
+      "grid.color": C["grid"], "grid.linewidth": 0.6,
       "lines.solid_capstyle": "round"}
 WIDE = (8.0, 2.6)          # inches; the page scales a figure to its column
 SMALL = (3.9, 2.3)
@@ -150,7 +150,6 @@ figure .ft { font-weight: 600; font-size: 13.5px; margin-bottom: 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
 .sw.few { border: 1.5px dashed var(--muted); background: transparent; }
-.sw.mixed { background: repeating-linear-gradient(45deg, var(--k-clean) 0 2px, var(--surface) 2px 4px); outline: 1px solid var(--k-clean); outline-offset: -1px; }
 .sw.ring { border-radius: 50%; border: 2px solid var(--ink); background: var(--surface); }
 .sw.line { width: 16px; height: 0; border-top: 2px dashed var(--ink2); border-radius: 0; }
 .figrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
@@ -346,8 +345,7 @@ def command(text):
 
 TEXT = (["library", "pitstop", "bam", "gtf", "fasta", "clean_lengths", "read_lengths", "clean_lengths_repaired",
          "read_lengths_repaired", "mixed_lengths", "bias_max_at", "repair"] + [f"flag_{f}" for f in qc.FLAGS])
-CLASSES = (("clean", "clean"), ("mixed", "mixed"), ("short state", "short state"), ("no frame", "no frame"),
-           ("few reads", "too few reads"))
+CLASSES = (("clean", "clean"), ("short state", "short state"), ("no frame", "no frame"), ("few reads", "too few reads"))
 SECTIONS = (("verdict", "Verdict and next steps"), ("reads", "The reads that pitstop reads"),
             ("depth", "Depth and complexity"), ("lengths", "Read lengths"), ("regions", "Regions per length"),
             ("frame", "Frame per length"), ("ends", "Ends at the annotated starts and stops"),
@@ -401,8 +399,6 @@ def lengths_chart(t, lib):
         kw = dict(width=0.78, linewidth=0.8, edgecolor=C["surface"])
         if cls == "clean":
             kw["color"] = C["k-clean"]
-        elif cls == "mixed":
-            kw.update(facecolor=C["surface"], edgecolor=C["k-clean"], hatch="////", linewidth=0.6)
         elif cls == "short state":
             kw["color"] = C["k-short"]
         elif cls == "no frame":
@@ -412,7 +408,8 @@ def lengths_chart(t, lib):
         b = ax.bar([r["length"]], [r["share"]], **kw)
         gid = f"len-{i}"
         b[0].set_gid(gid)
-        tips[gid] = f"{r['length']} nt: {pct(r['share'])} of the reads ({count(r['reads'])}), {cls}"
+        tips[gid] = (f"{r['length']} nt: {pct(r['share'])} of the reads ({count(r['reads'])}), {cls}"
+                     + (", mixed at the starts" if r["mixed"] else ""))
     bar_axis(ax, L, (0, max(t["share"].max() * 1.12, 1e-6)), "share of the reads")
     return svg(fig, "lengths", f"Reads per footprint length of {lib}, by class", tips)
 
@@ -504,7 +501,7 @@ def heat_chart(a, t, anchor, lib):
     ax.pcolormesh(np.r_[xs - 0.5, xs[-1] + 0.5], np.r_[rows - 0.5, rows[-1] + 0.5], grid.to_numpy(), cmap=cmap,
                   norm=norm, edgecolor=C["surface"], linewidth=0.3)
     ax.set_ylim(rows[-1] + 0.5, -0.5)
-    ax.set_yticks(rows, [f"{x}" + (" mixed" if c == "mixed" else "") for x, c in zip(L, t["class"])])
+    ax.set_yticks(rows, [f"{x}" + (" mixed" if m else "") for x, m in zip(L, t["mixed"])])
     ax.set_xticks([x for x in xs if x % 3 == 0], [nt(x) for x in xs if x % 3 == 0])
     ax.axvline(0, color=C["ink2"], linewidth=0.8, linestyle=(0, (2, 2)))
     ax.set_xlabel("5' end, nt from the start codon" if anchor == "start" else "3' end, nt from the stop codon")
@@ -543,7 +540,7 @@ def mismatch_chart(row, end, lib):
 def flag_rows(s, t):
     """(id, name, state, value, cut, section) per flag."""
     st = {f: s[f"flag_{f}"] for f in qc.FLAGS}
-    w, lr, u, sp = qc.WEAK_FRAME, qc.LONG_READS, qc.UNTEMPLATED, qc.SPIKE
+    w, lr, ud, u, sp = qc.WEAK_FRAME, qc.LONG_READS, qc.UNDER_DIGESTION, qc.UNTEMPLATED, qc.SPIKE
     depth = count(qc.COMPLEXITY_DEPTH)
     m5, bg5 = s["mismatch5"], s["mismatch5_background"]
     ratio = m5 / bg5 if bg5 and not isna(bg5) and bg5 > 0 else np.inf
@@ -567,8 +564,9 @@ def flag_rows(s, t):
         ("long_reads", "Long reads", st["long_reads"], f"{pct(s['long_share'])} at ≥ {qc.LONG} nt",
          f"pass < {lr[0]:.0%}, fail ≥ {lr[1]:.0%}", "lengths"),
         ("under_digestion", "Under-digestion", st["under_digestion"],
-         "weak frame and long reads" if st["under_digestion"] == "fail" else "no",
-         "weak frame and long reads together", "ends"),
+         "too few reads at the starts" if st["under_digestion"] == "unknown" else
+         f"3′ end spread {f2(s['end3_spread'])} nt",
+         f"pass < {ud[0]:.1f} nt, fail ≥ {ud[1]:.1f} nt", "ends"),
         ("untemplated", "Untemplated 5′ nt", st["untemplated"], uv,
          f"fail ≥ {u[0]:.0%} and ≥ {u[1]}× background", "mismatch"),
         ("end_spike", "End spike", st["end_spike"],
@@ -626,11 +624,12 @@ def next_steps(s, t):
     elif st["untemplated"] == "pass":
         out.append(("No repair needed.", f"{pct(s['mismatch5'])} of the reads have a 5′ mismatch; the background is "
                     f"{pct(s['mismatch5_background'])}.", None))
-    if st["under_digestion"] == "fail":
-        out.append(("repair does not help with the long reads.",
-                    "A weak frame with many long reads is under-digestion: see where the extra length is in "
-                    "\"Ends at the annotated starts and stops\". Pair this library only with libraries of the same "
-                    "digestion (compare their read lengths in MultiQC).", None))
+    if st["under_digestion"] in ("warn", "fail"):
+        out.append(("repair does not help with under-digestion.",
+                    f"The reads with the same 5′ end at the starts end at many places at the 3′ end (spread "
+                    f"{f2(s['end3_spread'])} nt): the nuclease did not trim them to the ribosome. For the next "
+                    "libraries, digest more. Pair this library only with libraries of the same digestion (compare "
+                    "their read lengths in MultiQC).", None))
     if st["short_state"] == "warn":
         out.append((f"Leave out the {qc.SHORT[0]}–{qc.SHORT[1]} nt reads.",
                     f"Only {f2(s['short_cds_share'])} of their P-sites fall in the CDS. They are RNA fragments, not "
@@ -640,7 +639,8 @@ def next_steps(s, t):
         out.append((f"Mixed lengths: {span(mixed)} nt. Leave them out of the start lengths.",
                     "At the annotated starts, the nucleotide beside the 5′-end peak of these lengths holds "
                     f"{qc.MIXED} of the peak's reads or more: two groups of 5′ ends, and one offset puts the smaller "
-                    "group 1 nt off (see the ends at the starts and stops)."
+                    "group 1 nt off (see the ends at the starts and stops). Their frame in the CDS decides if they "
+                    "are clean, as for the other lengths."
                     + (" The added 5′ nucleotide can cause this: inspect the repaired BAM."
                        if st["untemplated"] == "fail" else ""), None))
     if st["low_complexity"] == "warn":
@@ -768,10 +768,10 @@ def inspect_report(prefix):
               f"{pct(s['disome_share'], 2)} of the reads are {qc.DISOME[0]}–{qc.DISOME[1]} nt (disomes). Expected in "
               "a disome library; in a monosome library they show how wide the size selection was.")
     shown_cls = [k for k, _ in CLASSES if (t["class"] == k).any()]
-    leg = legend([(None, "var(--k-clean)", "clean"), ("mixed", None, "mixed"),
-                  (None, "var(--k-short)", "short state"), (None, "var(--k-noframe)", "no frame"),
+    leg = legend([(None, "var(--k-clean)", "clean"), (None, "var(--k-short)", "short state"),
+                  (None, "var(--k-noframe)", "no frame"),
                   ("few", None, "too few reads")][i] for i, (k, _) in enumerate(CLASSES) if k in shown_cls)
-    lt = t_all[["length", "reads", "share", "class", "top_frame", "start_peak", "offset"]]
+    lt = t_all[["length", "reads", "share", "class", "mixed", "top_frame", "start_peak", "offset"]]
     lengths = section("lengths", "Read lengths", (
         findings([(st["long_reads"], f"{pct(s['long_share'])} of the reads are {qc.LONG} nt or longer. The commonest "
                                      f"length is {int(s['common_length'])} nt."),
@@ -781,8 +781,8 @@ def inspect_report(prefix):
                  (f"≤ {qc.SHORT_MAX} nt", pct(s["short_share"]), ""),
                  ("Clean share", f2(s["clean_share"]), f"lengths {span(int_list(s['clean_lengths']))}")])
         + fig_block("Reads per footprint length, by class", charts["lengths"],
-                    f"Clean: top-phase share {qc.CLEAN} or more. Mixed: at the annotated starts, a nucleotide beside the "
-                    f"5′-end peak holds {qc.MIXED} of the peak or more. Short state: {qc.SHORT[0]}–{qc.SHORT[1]} nt, "
+                    f"Clean: top-phase share {qc.CLEAN} or more in the CDS interior. Short state: "
+                    f"{qc.SHORT[0]}–{qc.SHORT[1]} nt, "
                     f"the 5′ end at nt {nt(qc.SHORT_PEAK)}, and {qc.SHORT_CDS} of the P-sites or more in the CDS. No "
                     f"frame: none of these. Too few reads: fewer than {qc.MIN_FRAME} reads in the CDS interior, or less "
                     f"than {qc.MIN_SHARE:.1%} of the reads. The "
@@ -855,7 +855,7 @@ def inspect_report(prefix):
         + legend([(None, f"var(--h{i})", f"{'< ' + str(HEAT_BINS[0]) if i == 0 else '≥ ' + str(HEAT_BINS[i - 1])}")
                   for i in range(8)])
         + tsv_view(t_all[["length", "start_reads", "start_peak", "start_peak_share", "start_beside", "stop_reads",
-                          "stop_peak", "stop_peak_share", "stop_beside", "class"]], f"{lib}.lengths.tsv")
+                          "stop_peak", "stop_peak_share", "stop_beside", "class", "mixed"]], f"{lib}.lengths.tsv")
         + tsv_view(a[a["length"].isin(t["length"])], f"{lib}.anchors.tsv")))
 
     mismatch = section("mismatch", "Read ends against the transcript", mismatch_section(s, e, a5, charts, st, lib))
@@ -893,16 +893,22 @@ def end_lines(s, t, st):
     core = idx.loc[int(s["common_length"])]
     long = idx[(idx.index >= qc.LONG) & (idx["start_reads"] > 0) & idx["start_peak"].notna()]
     long = long[long["start_peak_share"] * long["start_reads"] >= qc.MIN_ANCHOR]
+    ud = st["under_digestion"]
+    if ud != "unknown":
+        out.append((ud, f"At the starts, the reads whose 5′ end is at nt {nt(s['end3_peak'])} (longer than "
+                        f"{qc.SHORT_MAX} nt) have a 3′ end spread of {f2(s['end3_spread'])} nt: the standard deviation "
+                        "of their lengths. "
+                        + ("Their 3′ ends are at many places: under-digestion. No rule per read fixes this."
+                           if ud != "pass" else "Their 3′ ends are trimmed to a few places.")))
     if st["long_reads"] != "pass" and len(long) and not isna(core["start_peak"]):
         moved = (long["start_peak"] - core["start_peak"]).abs()
         peaks = ", ".join(nt(x) for x in sorted(set(long["start_peak"]), reverse=True))
         three = bool((moved <= 1).all())
-        out.append(("fail" if st["under_digestion"] == "fail" else "warn",
+        out.append((st["long_reads"],
                     f"At the starts, the 5′ ends of the reads of {qc.LONG} nt or more peak at nt {peaks}; those of the "
                     f"commonest length ({int(s['common_length'])} nt) at nt {nt(core['start_peak'])}. "
-                    + ("So the extra length is at the 3′ end" + (": under-digestion. No rule per read fixes this."
-                                                                 if st["under_digestion"] == "fail" else ".")
-                       if three else "So part of the extra length is at the 5′ end.")))
+                    + ("So the extra length is at the 3′ end." if three else
+                       "So part of the extra length is at the 5′ end.")))
     if st["untemplated"] == "fail":
         out.append(("warn", "Part of each length has its 5′ end 1 nt upstream: the added 5′ nucleotide, not a second "
                             "group of footprints. repair clips the untemplated 5′ nt and moves these reads back."))
@@ -911,7 +917,7 @@ def end_lines(s, t, st):
         peaks = sorted({nt(x) for x in clean["start_peak"].dropna()})
         out.append(("pass" if len(peaks) == 1 else "info",
                     f"At the starts, the 5′ ends of the clean lengths peak at nt {', '.join(peaks)}."))
-    mixed = idx[idx["class"] == "mixed"]
+    mixed = idx[idx["mixed"]]
     if len(mixed):
         each = "; ".join(f"{x} nt: {f2(r['start_beside'])} beside nt {nt(r['start_peak'])}" for x, r in mixed.iterrows())
         out.append(("info", f"Mixed lengths ({each}): the nucleotide beside the 5′-end peak holds this share of the "

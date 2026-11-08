@@ -487,6 +487,7 @@ INSPECT_LENGTHS = {21: (0.10, {12: 1.0}),                    # short state: 5' e
                    28: (0.35, {12: 0.9, 13: 0.05, 11: 0.05}),
                    29: (0.25, {12: 0.85, 13: 0.10, 11: 0.05}),
                    34: (0.15, {13: 1.0})}                    # long: the extra length at the 3' end
+INSPECT_START_SPLIT = {29: {12: 0.6, 11: 0.4}}   # P-sites on the start codon: mixed at the starts, clean in the CDS
 FRAGMENT = 20         # RNA fragments: uniform in the trailers and on the transcript without a CDS
 UNTEMPLATED = "T"     # the added 5' nt (A where the transcript has T)
 
@@ -513,7 +514,10 @@ def make_inspect_dataset(directory, seed=7, scale=2, fragments=1500, copied=0.1,
             psites += [cs] * peak + [ce - 3] * peak
             for p in psites:
                 length = lengths[rng.choice(len(lengths), p=weights / weights.sum())]
-                offs, probs = zip(*INSPECT_LENGTHS[length][1].items())
+                offsets = INSPECT_LENGTHS[length][1]
+                if p == cs:
+                    offsets = INSPECT_START_SPLIT.get(length, offsets)
+                offs, probs = zip(*offsets.items())
                 p5 = p - rng.choice(offs, p=probs)
                 if 0 <= p5 and p5 + length <= len(tx["seq"]):
                     feet.append((name, int(p5), length))

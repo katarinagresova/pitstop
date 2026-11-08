@@ -14,22 +14,28 @@ two nt beside a peak, as a share of the peak. The offset of a length: minus its 
 fewer than MIN_ANCHOR reads at the peak; its P-sites give the regions (leader, CDS, trailer: the stop codon and after;
 transcript: no CDS). Repair (`pitstop repair`) clips the untemplated 5' nt: of the first UNTEMPLATED_MAX nt of the
 read, from the first aligned nt on, each that does not match the transcript becomes a soft clip; it stops at the
-first match (an aligner's 5' soft clip counts towards the UNTEMPLATED_MAX nt, and one nt stays aligned).
+first match (an aligner's 5' soft clip counts towards the UNTEMPLATED_MAX nt, and one nt stays aligned). The 3' end
+spread: the standard deviation of the length of the reads whose 5' end is at the start peak of all lengths above
+SHORT_MAX and below DISOME (the 5' end is fixed, so the length gives the 3' end). A nuclease that trims every
+footprint to the ribosome gives about one length there; under-digestion leaves the 3' ends at many places.
 
 A class per length, the first rule that holds:
   few reads    fewer than MIN_FRAME reads in the CDS interior, or less than MIN_SHARE of the reads
   short state  SHORT nt, the start peak at SHORT_PEAK with MIN_ANCHOR reads or more, SHORT_CDS of the P-sites or more in
                the CDS: ribosomes with an open A site (not damaged footprints; repair does not touch them)
-  mixed        MIN_ANCHOR reads or more at the start peak, and beside it MIXED of them or more (as `starts`): two
-               groups of 5' ends, and one offset puts the smaller group 1 nt off
   clean        top frame CLEAN or more
   no frame     else
+The class uses the frame in the CDS interior, as quant, orfs and score do. Mixed (a column apart from the class): a clean
+or no-frame length with MIN_ANCHOR reads or more at the start peak, and beside it MIXED of them or more (as `starts`):
+two groups of 5' ends at the starts, and one offset puts the smaller group 1 nt off. It matters for the start lengths
+of `starts` only.
 The suggested read lengths: of the runs of consecutive clean lengths, the one with the most reads.
 
 Tables (<prefix>.<name>.tsv). The report (report.py) reads only these, so every number of the report is in a table.
   lengths     per length: the reads and their share; the CDS-interior reads and their phases; the start peak (its reads,
               share and beside); the 3' ends at the stops the same way (nt from the first nt of the stop codon); the
-              offset; the P-sites by region (shares); the class; after repair, the reads, top frame and class
+              offset; the P-sites by region (shares); the class and mixed; after repair, the reads, top frame and
+              class
   anchors     per length: the reads by 5' end around the annotated starts (START_WINDOW), and by 3' end around the
               stops (STOP_WINDOW); share: of the length's reads in that window
   ends        per length and end, and for all lengths (length "all"): the reads, their soft clips (1, 2, 3 or more nt),
@@ -42,7 +48,8 @@ Tables (<prefix>.<name>.tsv). The report (report.py) reads only these, so every 
               share falls with the depth, so the flag uses summary's distinct_share_at_depth: the expected distinct
               footprints per read in a subsample of COMPLEXITY_DEPTH reads (exact, from the reads per footprint; NA
               with fewer reads)
-  summary     one row: the inputs, the read counts, the library values, the flags (FLAGS) and the suggestions
+  summary     one row: the inputs, the read counts, the library values (with the 3' end spread: end3_peak, the start
+              peak; end3_reads, its reads; end3_spread), the flags (FLAGS) and the suggestions
 The flags have one of five states: pass, warn, fail, unknown (too few reads or no read sequences), info (no cut).
 """
 import logging
@@ -84,13 +91,15 @@ for _i, _b in enumerate(b"ACGT"):
     CODE[_b] = _i
 BASES = "ACGT"
 
-# The cuts of the flags: first values, not yet set on data.
+# The cuts of the flags, set on 20 public libraries of known problems and 81 clean ones (and their yeast spike-ins).
 WEAK_FRAME = (0.5, 0.3)      # clean share: pass >= 0.5, warn >= 0.3, else fail
 LONG_READS = (0.10, 0.25)    # share at LONG nt or more: pass < 0.10, warn < 0.25, else fail
+UNDER_DIGESTION = (1.4, 1.7)  # 3' end spread (nt): pass < 1.4, warn < 1.7, else fail
+SPREAD_READS = 1_000         # ... unknown with fewer reads at the start peak (a GTF without leaders has none)
 UNTEMPLATED = (0.05, 5)      # 5' mismatch >= 0.05 and >= 5x its background ...
 CLIPPED = 0.5                # ... and clipped by the aligner (info, not fail) if the 5' clip share >= 0.5 x it
-SPIKE = (3, 0.02)            # a mismatch spike: > 3x the background and > 0.02 (5' positions 2-3, 3' positions 0-1)
-SHORT_READS = 50_000         # the short state: unknown with fewer reads at SHORT nt
+SPIKE = (3, 0.1)             # a mismatch spike: > 3x the background and > 0.1 (5' positions 2-3, 3' positions 0-1)
+SHORT_READS = 10_000         # the short state: unknown with fewer reads at SHORT nt
 COMPLEXITY_DEPTH = 1_000_000  # low complexity: the distinct share in a subsample of this many reads (unknown with fewer)
 COMPLEXITY = 0.4              # ... warn below it. No fail: without UMIs, PCR copies and ribosomes on one nt look alike
 FLAGS = ("weak_frame", "long_reads", "under_digestion", "untemplated", "end_spike", "mixed_lengths", "short_state",
@@ -195,9 +204,9 @@ def length_table(pos5, length, ctx, lengths):
         [(interior < MIN_FRAME) | (reads < MIN_SHARE * reads.sum()),
          (L >= SHORT[0]) & (L <= SHORT[1]) & (s_peak == SHORT_PEAK) & (s_at >= MIN_ANCHOR)
          & (np.nan_to_num(reg[:, 1]) >= SHORT_CDS),
-         (s_at >= MIN_ANCHOR) & (np.nan_to_num(s_beside) >= MIXED),
          np.nan_to_num(top) >= CLEAN],
-        ["few reads", "short state", "mixed", "clean"], "no frame")
+        ["few reads", "short state", "clean"], "no frame")
+    mixed = np.isin(cls, ["clean", "no frame"]) & (s_at >= MIN_ANCHOR) & (np.nan_to_num(s_beside) >= MIXED)
     out = pd.DataFrame({"length": L, "reads": reads, "share": reads / max(reads.sum(), 1e-300), "interior": interior})
     for f in range(3):
         out[f"phase{f}"] = share(phases[:, f], interior)
@@ -215,6 +224,7 @@ def length_table(pos5, length, ctx, lengths):
     for i, r in enumerate(REGIONS):
         out[r] = reg[:, i]
     out["class"] = cls
+    out["mixed"] = mixed
     return out, start, stop
 
 
@@ -378,10 +388,9 @@ def flags(s):
         f["weak_frame"] = "pass" if c >= WEAK_FRAME[0] else "warn" if c >= WEAK_FRAME[1] else "fail"
     v = s["long_share"]
     f["long_reads"] = "pass" if v < LONG_READS[0] else "warn" if v < LONG_READS[1] else "fail"
-    if f["weak_frame"] == "unknown":
-        f["under_digestion"] = "unknown"
-    else:
-        f["under_digestion"] = "fail" if f["weak_frame"] != "pass" and f["long_reads"] != "pass" else "pass"
+    v = s["end3_spread"]
+    f["under_digestion"] = ("unknown" if pd.isna(v) else "pass" if v < UNDER_DIGESTION[0] else
+                            "warn" if v < UNDER_DIGESTION[1] else "fail")
     m, bg = s["mismatch5"], s["mismatch5_background"]
     if pd.isna(m) or pd.isna(bg):
         f["untemplated"] = "unknown"
@@ -404,6 +413,24 @@ def flags(s):
     return f
 
 
+def end3_spread(anchors):
+    """(start peak, its reads, 3' end spread) of the lengths above SHORT_MAX and below DISOME, from anchors.tsv; the
+    spread is NaN with fewer than SPREAD_READS reads at the peak."""
+    a = anchors[(anchors["anchor"] == "start") & (anchors["length"] > SHORT_MAX) & (anchors["length"] < DISOME[0])
+                & (anchors["x"] >= PEAK[0]) & (anchors["x"] <= PEAK[1])]
+    by_x = a.groupby("x")["reads"].sum()
+    if by_x.empty or by_x.max() <= 0:
+        return np.nan, 0.0, np.nan
+    peak = int(by_x.idxmax())
+    at = a[a["x"] == peak]
+    w, L = at["reads"].to_numpy(), at["length"].to_numpy()
+    n = w.sum()
+    if n < SPREAD_READS:
+        return peak, n, np.nan
+    m = (w * L).sum() / n
+    return peak, n, np.sqrt((w * (L - m) ** 2).sum() / n)
+
+
 def tv_distance(a, b):
     """Total-variation distance of two profiles; NaN if one is empty."""
     if a.sum() <= 0 or b.sum() <= 0:
@@ -411,7 +438,7 @@ def tv_distance(a, b):
     return 0.5 * np.abs(a / a.sum() - b / b.sum()).sum()
 
 
-def summary(stats, aln, lengths_df, ends_df, cplx, reads_per_footprint, names):
+def summary(stats, aln, lengths_df, anchors_df, ends_df, cplx, reads_per_footprint, names):
     """summary.tsv's one row (a dict)."""
     s = dict(names)
     s.update({k: stats[k] for k in ("reads_forward", "alignments_dropped_cigar", "reads_cigar_ok", "refs_not_in_gtf",
@@ -436,6 +463,7 @@ def summary(stats, aln, lengths_df, ends_df, cplx, reads_per_footprint, names):
     s["long_share"] = share[L >= LONG].sum()
     s["short_share"] = share[L <= SHORT_MAX].sum()
     s["disome_share"] = share[(L >= DISOME[0]) & (L <= DISOME[1])].sum()
+    s["end3_peak"], s["end3_reads"], s["end3_spread"] = end3_spread(anchors_df)
     reads = t["reads"].to_numpy()
     cds = np.nan_to_num(t["CDS"].to_numpy()) * reads
     no_cds = np.nan_to_num(t["transcript"].to_numpy()) * reads
@@ -458,8 +486,7 @@ def summary(stats, aln, lengths_df, ends_df, cplx, reads_per_footprint, names):
         s["best_length"], s["best_top_frame"] = int(b["length"]), b["top_frame"]
     else:
         s["best_length"], s["best_top_frame"] = pd.NA, np.nan
-    mixed = L[t["class"] == "mixed"]
-    s["mixed_lengths"] = ",".join(str(x) for x in mixed)
+    s["mixed_lengths"] = ",".join(str(x) for x in L[t["mixed"].to_numpy(dtype=bool)])
     a5 = ends_df[(ends_df["length"] == "all") & (ends_df["end"] == 5)].iloc[0]
     a3 = ends_df[(ends_df["length"] == "all") & (ends_df["end"] == 3)].iloc[0]
     bg = [f"mm{i}" for i in range(*BACKGROUND)]
@@ -518,7 +545,7 @@ def run(bam_path, gtf, fasta, out_prefix, report=True):
     cplx, reads_per_footprint = complexity_table(aln)
     names = dict(library=os.path.basename(out_prefix), pitstop=__version__, bam=os.path.basename(bam_path),
                  gtf=os.path.basename(gtf), fasta=os.path.basename(fasta))
-    s = summary(stats, aln, now, ends_df, cplx, reads_per_footprint, names)
+    s = summary(stats, aln, now, anchors, ends_df, cplx, reads_per_footprint, names)
     write(now, f"{out_prefix}.lengths.tsv")
     write(anchors, f"{out_prefix}.anchors.tsv")
     write(ends_df, f"{out_prefix}.ends.tsv")

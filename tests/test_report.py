@@ -65,9 +65,32 @@ def allowed_numbers(prefix):
     return out, " ".join(strings)
 
 
-@pytest.mark.parametrize("name", ["clean", "untemplated"])
-def test_every_number_is_in_a_table(runs, name):
-    _, prefix = runs[name]
+@pytest.fixture(scope="module")
+def under_digested(runs, tmp_path_factory):
+    """The clean run's tables with a 3' end spread of a failing library (the synthetic data have too few reads at the
+    starts to measure it), and the report drawn from them."""
+    _, src = runs["clean"]
+    prefix = tmp_path_factory.mktemp("under_digested") / "lib"
+    for name in ("summary", "lengths", "anchors", "ends", "complexity"):
+        df = pd.read_csv(f"{src}.{name}.tsv", sep="\t", dtype=str, keep_default_na=False)
+        if name == "summary":
+            df[["end3_reads", "end3_spread", "flag_under_digestion"]] = ["5000", "1.9123", "fail"]
+        df.to_csv(f"{prefix}.{name}.tsv", sep="\t", index=False)
+    report.inspect_report(str(prefix))
+    return prefix
+
+
+def test_under_digestion(runs, under_digested):
+    text = visible_text(page(under_digested))
+    assert "repair does not help with under-digestion." in text and "spread 1.91 nt" in text
+    assert "under-digestion. No rule per read fixes this." in text
+    clean = visible_text(page(runs["clean"][1]))
+    assert "too few reads at the starts" in clean and "under-digestion." not in clean
+
+
+@pytest.mark.parametrize("name", ["clean", "untemplated", "under_digested"])
+def test_every_number_is_in_a_table(runs, under_digested, name):
+    prefix = under_digested if name == "under_digested" else runs[name][1]
     allowed, strings = allowed_numbers(prefix)
     text = visible_text(page(prefix)).replace("−", "-")
     tokens = re.findall(r"(?<![\w.\-])-?\d[\d,]*(?:\.\d+)?(?![\w])", text)
@@ -101,7 +124,7 @@ def test_flags_and_steps(runs):
     assert text.index("For the next alignment") < text.index("For this BAM: run repair.")
     clean = visible_text(page(runs["clean"][1]))
     assert "Use the clean lengths: 28–29 nt." in clean and "run repair" not in clean and "For the next" not in clean
-    assert "Mixed lengths: 27 nt." in clean
+    assert "Mixed lengths: 27, 29 nt." in clean and "Their frame in the CDS decides" in clean
 
 
 def test_figures_use_theme_colours(runs):

@@ -52,13 +52,15 @@ def test_classes(clean):
     _, out = clean
     t = out["lengths"]
     assert t.loc[21, "class"] == "short state"
-    assert t.loc[27, "class"] == "mixed"
-    assert t.loc[27, "start_beside"] > 0.7
+    # the class is the frame in the CDS: 27 nt splits its 5' ends everywhere (no frame), 29 nt only at the start codon
+    assert (t.loc[27, "class"], t.loc[29, "class"]) == ("no frame", "clean")
+    assert t.loc[27, "start_beside"] > 0.7 and t.loc[29, "start_beside"] >= inspect.MIXED
+    assert list(t.loc[t["mixed"]].index) == [27, 29]
     assert list(t.loc[[28, 29], "class"]) == ["clean", "clean"]
     assert t.loc[20, "class"] != "short state"
     # 34 nt is clean too, but 28-29 has more reads
     assert out["summary"]["read_lengths"] == "28-29"
-    assert out["summary"]["mixed_lengths"] == "27"
+    assert out["summary"]["mixed_lengths"] == "27,29"
     assert out["summary"]["flag_mixed_lengths"] == "info"
 
 
@@ -147,6 +149,44 @@ def test_clean_flags(clean):
     assert s["flag_low_complexity"] == "unknown"   # fewer than COMPLEXITY_DEPTH reads
 
 
+def anchors(rows):
+    """A start-anchor table from (length, x, reads) rows."""
+    return pd.DataFrame([(L, "start", 5, x, r, np.nan) for L, x, r in rows],
+                        columns=["length", "anchor", "end", "x", "reads", "share"])
+
+
+def test_end3_spread():
+    # at nt -12: 600 reads of 28 nt and 400 of 30 nt (SD 0.98); not counted: the short state (21 nt), disomes (60 nt),
+    # nt -2 (outside the start-peak window), the stop anchors
+    rows = [(28, -12, 600), (30, -12, 400), (21, -12, 5000), (60, -12, 300), (28, -2, 9000), (29, -13, 100)]
+    t = pd.concat([anchors(rows), anchors([(30, 0, 1e6)]).assign(anchor="stop", end=3)])
+    peak, n, sd = inspect.end3_spread(t)
+    assert (peak, n) == (-12, 1000) and sd == pytest.approx(np.sqrt(0.96))
+    peak, n, sd = inspect.end3_spread(anchors([(28, -12, 600), (30, -12, 300)]))
+    assert (peak, n) == (-12, 900) and np.isnan(sd)            # fewer than SPREAD_READS reads
+    assert np.isnan(inspect.end3_spread(anchors([(28, 0, 5000)]))[2])   # no leaders: no read starts before a start
+
+
+def test_end3_spread_of_the_synthetic_reads(clean, monkeypatch):
+    data, out = clean
+    s = out["summary"]
+    assert s["end3_peak"] == -12 and s["end3_reads"] < inspect.SPREAD_READS
+    assert s["flag_under_digestion"] == "unknown"
+    # the truth: the reads with the 5' end at nt -12 of a start, split over their CDS transcripts as inspect does
+    w = {}
+    for r in footprint_reads(data):
+        coding = [(u, p) for u, p in r[3] if data["txs"][u]["cds_start"] is not None]
+        for u, p in coding:
+            if p - data["txs"][u]["cds_start"] == -12 and inspect.SHORT_MAX < r[4][2] < inspect.DISOME[0]:
+                w[r[4][2]] = w.get(r[4][2], 0) + 1 / len(coding)
+    L, n = np.array(list(w)), np.array(list(w.values()))
+    sd = np.sqrt((n * (L - (n * L).sum() / n.sum()) ** 2).sum() / n.sum())
+    monkeypatch.setattr(inspect, "SPREAD_READS", 100)
+    peak, reads, spread = inspect.end3_spread(out["anchors"])
+    assert (peak, reads) == (-12, pytest.approx(n.sum())) and spread == pytest.approx(sd)
+    assert spread < inspect.UNDER_DIGESTION[0]
+
+
 def test_rerun_is_identical(clean, tmp_path):
     data, out = clean
     again = run_inspect(data, tmp_path / "lib")
@@ -168,22 +208,25 @@ def test_read_bam_with_ends_same_alignments(clean):
 
 BASE = dict(classed_lengths=10, clean_share=0.6, long_share=0.02, mismatch5=0.01, mismatch5_background=0.005,
             clip5_share=0.0, mismatch5_inner=0.006, mismatch3=0.01, mismatch3_background=0.006, mixed_lengths="",
-            short_reads=1e6, short_cds_share=0.8, distinct_share_at_depth=0.5)
+            short_reads=1e6, short_cds_share=0.8, distinct_share_at_depth=0.5, end3_spread=1.0)
 
 
 @pytest.mark.parametrize("change, flag, state", [
     ({}, "weak_frame", "pass"),
     ({"clean_share": 0.4}, "weak_frame", "warn"),
     ({"classed_lengths": 0}, "weak_frame", "unknown"),
-    ({"clean_share": 0.1}, "under_digestion", "pass"),
-    ({"clean_share": 0.1, "long_share": 0.3}, "under_digestion", "fail"),
-    ({"long_share": 0.3}, "under_digestion", "pass"),
+    ({}, "under_digestion", "pass"),
+    ({"end3_spread": 1.5}, "under_digestion", "warn"),
+    ({"end3_spread": 2.0}, "under_digestion", "fail"),
+    ({"end3_spread": np.nan}, "under_digestion", "unknown"),
+    ({"clean_share": 0.1, "long_share": 0.3}, "under_digestion", "pass"),   # weak frame and long reads alone: not it
     ({"mismatch5": 0.2}, "untemplated", "fail"),
     ({"mismatch5": 0.2, "clip5_share": 0.19}, "untemplated", "info"),
     ({"mismatch5": 0.03}, "untemplated", "pass"),
     ({"mismatch5": np.nan}, "untemplated", "unknown"),
-    ({"mismatch5_inner": 0.05}, "end_spike", "warn"),
-    ({"mismatch3": 0.05}, "end_spike", "warn"),
+    ({"mismatch5_inner": 0.15}, "end_spike", "warn"),
+    ({"mismatch3": 0.15}, "end_spike", "warn"),
+    ({"mismatch5_inner": 0.05}, "end_spike", "pass"),   # 10x the background, but too small to move a read end
     ({"mixed_lengths": "27,30"}, "mixed_lengths", "info"),
     ({"short_reads": 1000}, "short_state", "unknown"),
     ({"short_cds_share": 0.3}, "short_state", "warn"),
@@ -199,7 +242,7 @@ def test_flag_rules(change, flag, state):
 
 def test_suggest_takes_the_run_with_most_reads():
     t = pd.DataFrame({"length": [25, 26, 27, 28, 29, 31], "reads": [5, 50, 1, 60, 70, 500],
-                      "class": ["clean", "clean", "mixed", "clean", "clean", "clean"]})
+                      "class": ["clean", "clean", "no frame", "clean", "clean", "clean"]})
     assert inspect.suggest(t) == "31-31"
     t.loc[5, "reads"] = 100
     assert inspect.suggest(t) == "28-29"
