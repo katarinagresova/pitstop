@@ -40,7 +40,7 @@ def equivalence_classes(read, tx, n_orf, weight=None):
     weight in P(read | ORF) (1 without `weight`), counts per class. A read with several compatible
     P-sites on one ORF counts once for it, with the largest weight."""
     w = np.ones(read.size) if weight is None else weight
-    key = read * n_orf + tx
+    key = read.astype(np.int64) * n_orf + tx
     o = np.lexsort((-w, key))
     key, w = key[o], w[o]
     first = np.ones(key.size, dtype=bool)
@@ -70,6 +70,8 @@ def em(unique, classes, counts, lengths, tol, max_iter):
     classes_t = classes.T.tocsr()
     sizes = np.diff(classes.indptr)
     n = unique.sum() + counts.sum()
+    pos = np.flatnonzero(unique > 0)
+    unique_pos = unique[pos]
 
     def step(alpha):
         w = alpha / lengths
@@ -77,7 +79,7 @@ def em(unique, classes, counts, lengths, tol, max_iter):
 
     def loglik(alpha):
         w = alpha / lengths / n
-        return (unique[unique > 0] * np.log(w[unique > 0])).sum() + (counts * np.log(classes @ w)).sum()
+        return (unique_pos * np.log(w[pos])).sum() + (counts * np.log(classes @ w)).sum()
 
     alpha = unique + (classes_t > 0) @ (counts / sizes)
     ll, steps, change = loglik(alpha), 0, np.inf
@@ -96,9 +98,10 @@ def em(unique, classes, counts, lengths, tol, max_iter):
         vv = (v * v).sum()
         s = min(-np.sqrt((r * r).sum() / vv), -1.0) if vv > 0 else -1.0
         # s = -1 is a2, two plain EM steps; move s towards it until no positive count turns <= 0
+        not_pos = ~(alpha > 0)
         for _ in range(30):
             ext = alpha - 2 * s * r + s * s * v
-            if (ext[alpha > 0] > 0).all():
+            if ((ext > 0) | not_pos).all():
                 break
             s = (s - 1) / 2
         else:
@@ -124,9 +127,11 @@ def tie_groups(unique, classes):
     return [g for g in groups.values() if len(g) > 1]
 
 
-def qc_table(aln, anno, table, lengths):
+def qc_table(aln, anno, lengths, has_off, psite_in_cds, psite):
     """Reads per read length, P-site region and 5' end phase (qc.tsv), every read of `aln` once: split evenly
     over its alignments to transcripts with a CDS or, if it has none, over all its alignments.
+    has_off, psite_in_cds, psite: assign() on the alignments of `aln` to a transcript with a CDS at a length
+    in `lengths`, in their order in `aln`.
       region  where the P-site is: leader, CDS (start codon to last sense codon) or trailer (the stop codon
               and after); NA without a CDS, at a length outside `lengths` or without an offset
       phase   (5' end - CDS start) mod 3, as in offsets.tsv, if the 5' end is in the CDS; else NA"""
@@ -138,15 +143,19 @@ def qc_table(aln, anno, table, lengths):
     t = np.maximum(aln.tx, 0)   # tx -1 (no CDS) is masked by `coding`
     start, end = anno.cds_start[t], anno.cds_end[t]
     in_cds = coding & (aln.pos5 >= start) & (aln.pos5 < end)
-    phase = pd.array(np.where(in_cds, (aln.pos5 - start) % 3, 0), dtype="Int64")
-    phase[~in_cds] = pd.NA
     window = np.flatnonzero(coding & (aln.length >= lengths[0]) & (aln.length <= lengths[1]))
-    has_off, psite_in_cds, psite = assign(aln.subset(window), anno, table, lengths)
-    region = pd.array([pd.NA] * weight.size, dtype="string")
-    region[window[has_off]] = np.select([psite < start[window], psite_in_cds], ["leader", "CDS"],
-                                        "trailer")[has_off]
-    return (pd.DataFrame({"length": aln.length, "region": region, "phase": phase, "reads": weight})
-            .groupby(["length", "region", "phase"], dropna=False)["reads"].sum().reset_index())
+    assert window.size == psite.size
+    # small integer codes, not strings and Int64 (less memory), in the order in which a groupby with
+    # dropna=False sorts the labels: phase 0-2, NA 3; region CDS 0, leader 1, trailer 2, NA 3
+    phase = np.where(in_cds, (aln.pos5 - start) % 3, 3).astype(np.int8)
+    region = np.full(weight.size, 3, dtype=np.int8)
+    region[window[has_off]] = np.select([psite < start[window], psite_in_cds], [1, 0], 2)[has_off]
+    qc = (pd.DataFrame({"length": aln.length, "region": region, "phase": phase, "reads": weight})
+          .groupby(["length", "region", "phase"])["reads"].sum().reset_index())
+    r, p = qc["region"].to_numpy(), qc["phase"].to_numpy()
+    qc["region"] = pd.array(np.array(["CDS", "leader", "trailer", None], dtype=object)[r], dtype="string")
+    qc["phase"] = pd.arrays.IntegerArray(np.where(p < 3, p, 0).astype(np.int64), p == 3)
+    return qc
 
 
 def quantify(bam_path, gtf, fasta, lengths, out_prefix, offsets_path=None, min_support=30,
@@ -169,6 +178,8 @@ def quantify(bam_path, gtf, fasta, lengths, out_prefix, offsets_path=None, min_s
         offsets_df = offsets.read_offsets(offsets_path)
     table = offsets.lookup(offsets_df, lengths)
     has_off, in_cds, psite = assign(aln, anno, table, lengths)
+    qc = qc_table(bam_aln, anno, lengths, has_off, in_cds, psite)
+    del bam_aln   # only qc_table needs every alignment
     stats["reads_with_offset"] = aln.subset(has_off).count_reads()
     psite = psite[in_cds]
     aln = aln.subset(in_cds)
@@ -206,7 +217,7 @@ def quantify(bam_path, gtf, fasta, lengths, out_prefix, offsets_path=None, min_s
         "psite": psite,
         "length": aln.length,
     }).to_csv(f"{out_prefix}.psites.tsv", sep="\t", index=False)
-    qc_table(bam_aln, anno, table, lengths).to_csv(f"{out_prefix}.qc.tsv", sep="\t", index=False, na_rep="NA")
+    qc.to_csv(f"{out_prefix}.qc.tsv", sep="\t", index=False, na_rep="NA")
     pd.DataFrame(list(stats.items()), columns=["stat", "value"]).to_csv(
         f"{out_prefix}.stats.tsv", sep="\t", index=False)
     return quant, offsets_df, stats
