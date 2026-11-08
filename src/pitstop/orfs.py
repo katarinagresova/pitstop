@@ -153,7 +153,7 @@ def outside_components(orfs, anno, refs, ref_len):
 
 def orf_hits(ref, psite, orf_ref, start, end):
     """(alignment, ORF) pairs whose P-site is in the ORF: start <= P-site < end, same reference."""
-    key = ref * 2**32 + psite
+    key = ref.astype(np.int64) * 2**32 + psite
     order = np.argsort(key, kind="stable")
     lo = np.searchsorted(key[order], orf_ref * 2**32 + start)
     n = np.searchsorted(key[order], orf_ref * 2**32 + end) - lo

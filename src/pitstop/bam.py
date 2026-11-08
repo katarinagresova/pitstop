@@ -23,6 +23,8 @@ _SKIP = 0x4 | 0x10 | 0x800   # unmapped, reverse, supplementary
 
 @dataclass
 class Alignments:
+    """The per-alignment arrays are int32 (half the memory of int64). A product of two of them, or of one
+    and a large number, can overflow int32: cast to int64 first."""
     read: np.ndarray     # read index (0..n_reads-1), one per alignment
     tx: np.ndarray       # annotation index of the transcript, -1 if it has no valid CDS
     pos5: np.ndarray     # 0-based transcript position of the 5' end
@@ -64,11 +66,11 @@ def read_bam(path, anno, stats, keep=None):
     names, last, r = {}, None, -1
     cigar_ok = bytearray()   # per read: 1 if it has an alignment with an acceptable CIGAR
     fp_of = {}               # CIGAR string -> footprint length, 0 if not acceptable
-    read, ref, pos5, length = array("q"), array("q"), array("q"), array("q")
+    read, ref, pos5, length = array("i"), array("i"), array("i"), array("i")   # C int: int32
     n_bad_cigar_aln = n_dropped = 0
     with pysam.AlignmentFile(path, "rb", check_sq=False) as bam:
         refs = [r.split("|", 1)[0] for r in bam.references]
-        ref_tx = np.array([index.get(r, -1) for r in refs], dtype=np.int64)
+        ref_tx = np.array([index.get(r, -1) for r in refs], dtype=np.int32)
         ref_len = np.array(bam.lengths, dtype=np.int64)
         known = ref_tx >= 0
         if not known.any():
@@ -112,9 +114,9 @@ def read_bam(path, anno, stats, keep=None):
     if keep is not None:
         stats["refs_not_in_gtf"] = kept.count(False)
         stats["alignments_dropped_ref_not_in_gtf"] = n_dropped
-    ref = np.frombuffer(ref, dtype=np.int64)
-    aln = Alignments(np.frombuffer(read, dtype=np.int64), ref_tx[ref], np.frombuffer(pos5, dtype=np.int64),
-                     np.frombuffer(length, dtype=np.int64), len(names), list(names), ref, refs)
+    ref = np.frombuffer(ref, dtype=np.int32)
+    aln = Alignments(np.frombuffer(read, dtype=np.int32), ref_tx[ref], np.frombuffer(pos5, dtype=np.int32),
+                     np.frombuffer(length, dtype=np.int32), len(names), list(names), ref, refs)
     log.info("%s: %d forward reads, %d with an acceptable alignment (%d alignments dropped for their CIGAR)",
              path, len(names), stats["reads_cigar_ok"], n_bad_cigar_aln)
     return aln

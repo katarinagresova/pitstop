@@ -40,7 +40,7 @@ def equivalence_classes(read, tx, n_orf, weight=None):
     weight in P(read | ORF) (1 without `weight`), counts per class. A read with several compatible
     P-sites on one ORF counts once for it, with the largest weight."""
     w = np.ones(read.size) if weight is None else weight
-    key = read * n_orf + tx
+    key = read.astype(np.int64) * n_orf + tx
     o = np.lexsort((-w, key))
     key, w = key[o], w[o]
     first = np.ones(key.size, dtype=bool)
