@@ -66,6 +66,7 @@ HIDDEN = 0.005       # the next steps name the hidden added nt from this share
 STATE = {"pass": ("✓", "Pass"), "warn": ("!", "Warn"), "fail": ("✕", "Fail"), "unknown": ("?", "Unknown"),
          "info": ("i", "Info")}
 MINUS = "−"
+DOCS = "https://katarinagresova.github.io/pitstop/flags/"   # a flag's page: DOCS + its name with "-" for "_"
 
 CSS = """
 * { box-sizing: border-box; }
@@ -695,17 +696,18 @@ def inspect_report(prefix):
 
     steps = "".join(f'<li><div class="t">{esc(title)}</div><p>{esc(text)}</p>{command(cmd) if cmd else ""}</li>'
                     for title, text, cmd in next_steps(s, t_all))
-    rows = pd.DataFrame([(name, state, value, cut, sec) for _, name, state, value, cut, sec in flags],
-                        columns=["Flag", "State", "Value", "Cut", "Section"])
+    rows = pd.DataFrame(flags, columns=["Id", "Flag", "State", "Value", "Cut", "Section"])
     flag_html = ('<table class="flags"><thead><tr><th>Flag</th><th>State</th><th>Value</th><th>Cut</th><th></th>'
                  "</tr></thead><tbody>" + "".join(
                      f"<tr><td>{esc(r.Flag)}</td><td>{state_cell(r.State)}</td><td>{esc(r.Value)}</td>"
-                     f'<td>{esc(r.Cut)}</td><td><a href="#{r.Section}">details</a></td></tr>'
+                     f'<td>{esc(r.Cut)}</td><td><a href="#{r.Section}">details</a> · '
+                     f'<a href="{DOCS}{r.Id.replace("_", "-")}/">docs</a></td></tr>'
                      for r in rows.itertuples()) + "</tbody></table>")
     verdict = section("verdict", "Verdict and next steps", (
         f'<div class="vgrid"><div class="panel nextbox"><h3>Next steps</h3><ol class="steps">{steps}</ol></div>'
-        f'<div class="panel scroll">{flag_html}<p class="note">The cuts are first values. A fail does not change the '
-        "exit code.</p></div></div>\n"), fold=False)
+        f'<div class="panel scroll">{flag_html}<p class="note">The cuts were set on libraries with known problems and '
+        "without. The docs page of each flag gives the reasons, and what to do. A fail does not change the exit "
+        "code.</p></div></div>\n"), fold=False)
 
     counts = pd.DataFrame([
         ("Forward reads in the BAM", count(s["reads_forward"])),

@@ -33,8 +33,8 @@ examples, and what to watch for.
 
 | Your libraries | Workflow | Commands |
 |---|---|---|
-| Ribo-seq of elongating ribosomes | [Elongation libraries](workflows/elongation.md) | `quant`; `orfs` and `score` on your ORF table |
-| Harringtonine or lactimidomycin libraries, each with a matched elongation library | [Initiation and elongation libraries](workflows/initiation.md) | `quant`, `orfs`, `starts`; then `orfs` and `score` on the new ORFs |
+| Ribo-seq of elongating ribosomes | [Elongation libraries](workflows/elongation.md) | `inspect`; `quant`; `orfs` and `score` on your ORF table |
+| Harringtonine or lactimidomycin libraries, each with a matched elongation library | [Initiation and elongation libraries](workflows/initiation.md) | `inspect`; `quant`, `orfs`, `starts`; then `orfs` and `score` on the new ORFs |
 | Either of these, in two or more conditions | [Comparing conditions](workflows/conditions.md) | the same, with one ORF table and one offsets table for all libraries; then your own tests on the counts |
 
 Every workflow starts from transcriptome alignments: [Preparing the
@@ -43,8 +43,11 @@ alignment with STAR or bowtie. To count ORFs from an ORF caller or from genome
 coordinates: [ORF tables from other tools](workflows/orf-tables.md).
 
 Before the first command, `pitstop inspect` checks each library and names the
-read lengths that keep their reading frame, for `--read-lengths`. If it finds
-extra nucleotides at the 5' end of the reads, `pitstop repair` clips them and
+read lengths that keep their reading frame, for `--read-lengths`. Each of its
+[flags](flags/index.md) has a page: what it means, its cut, and what to do. If
+it finds extra nucleotides at the 5′ end of the reads, let the aligner clip
+them the next time (STAR with `--quantTranscriptomeSAMoutput BanSingleEnd`, or
+bowtie2 `--local`). For the BAM you have, `pitstop repair` clips them and
 writes a new BAM for the other commands.
 
 ## Why
@@ -61,6 +64,8 @@ simulation alone.
 
 - **[Usage](usage.md)**: install, the commands, their inputs, and every
   output column.
+- **[Flags of the read QC](flags/index.md)**: what each flag of `inspect`
+  means, its cut and why, and what to do.
 - **[Typical workflows](#typical-workflows)**: which commands to run, in
   which order, from [preparing the reads](workflows/reads.md) to the tables
   for your tests.

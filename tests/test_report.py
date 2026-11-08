@@ -1,6 +1,7 @@
 import filecmp
 import html
 import json
+import pathlib
 import re
 
 import numpy as np
@@ -110,8 +111,20 @@ def test_no_paths_and_no_network(runs):
     doc = page(prefix)
     for path in (prefix.parent, data["bam"].parent):
         assert str(path) not in doc
-    assert not re.search(r"(src|href)=\"https?:", doc)
+    assert not re.search(r"src=\"https?:", doc)   # loads nothing
+    links = re.findall(r"href=\"(https?:[^\"]*)\"", doc)
+    assert links and all(u.startswith(report.DOCS) for u in links)   # links only to the docs of the flags
     assert "reads.bam" in doc and "annotation.gtf" in doc   # file names only
+
+
+def test_flag_pages_exist(runs):
+    """Each flag of the report links to its page, and the docs have that page."""
+    doc = page(runs["clean"][1])
+    pages = re.findall(rf"href=\"{re.escape(report.DOCS)}([^\"/]+)/\"", doc)
+    assert sorted(pages) == sorted(f.replace("_", "-") for f in inspect.FLAGS)
+    docs = pathlib.Path(__file__).resolve().parent.parent / "docs" / "flags"
+    for p in pages:
+        assert (docs / f"{p}.md").is_file(), p
 
 
 def test_flags_and_steps(runs):

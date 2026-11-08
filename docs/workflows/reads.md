@@ -21,8 +21,8 @@ From the BAM, pitstop uses ([Method: reads](../method.md#2-reads)):
 
 - **Sense alignments.** Ribo-seq libraries are stranded, with the read in the
   sense orientation of the RNA. If your protocol sequences the other strand,
-  reverse-complement the reads before the alignment. `stats.tsv` shows the
-  problem: few `reads_forward`.
+  reverse-complement the reads before the alignment. `inspect` shows the
+  problem: few forward reads.
 - **Every alignment of a read.** pitstop splits a read over all its
   alignments: the isoforms of a gene and its paralogs. The aligner must report
   all of them, not one picked at random.
@@ -151,23 +151,25 @@ bowtie -p 8 -v 2 --norc -k 256 --best --strata --reorder --sam -x tx_index \
 
 ## Check the alignment
 
-Run `pitstop quant` on each library (see the workflows). Then:
+Run `pitstop inspect` on each library ([Usage](../usage.md#read-qc-inspect)).
+Its report shows:
 
-- **`stats.tsv`** counts the reads after each filter: the sense reads, the
-  reads with a usable alignment, the reads assigned to a CDS. A large loss at
-  one step points to its cause: antisense reads, alignments with indels, or a
-  reference that does not match the GTF.
-- **`qc.tsv`** gives the reads per length and frame. Footprints of good
-  libraries have most reads at a few lengths, and at those lengths most reads
-  in one frame. How to read it: [Elongation
+- **The reads that pitstop reads**: the reads after each filter: the sense
+  reads, the reads with a usable alignment, the reads on transcripts of the
+  GTF (also in `summary.tsv`). A large loss at one step points to its cause:
+  antisense reads, alignments with indels, or a reference that does not match
+  the GTF.
+- **The read lengths and their frame.** Footprints of good libraries have
+  most reads at a few lengths, and at those lengths most reads in one frame.
+  The report names the read lengths to use. How to read it: [Elongation
   libraries](elongation.md#2-check-the-read-lengths).
-- **Untemplated nucleotides (bowtie).** bowtie writes the MD tag, which starts
-  with `0` and the reference base when the first base of the read does not
-  match. The share of reads with such a first base:
+- **Untemplated nucleotides.** The flag [untemplated 5′
+  nt](../flags/untemplated.md) fails if many reads start with a nucleotide
+  that is not in the transcript, and the alignment kept it (bowtie always
+  keeps it). A share of a few percent or less is normal. Tens of percent
+  means that many reads carry an untemplated nucleotide: align these
+  libraries again with STAR, as above. For a BAM that you cannot align again,
+  `pitstop repair` clips the nucleotide and writes a new BAM.
 
-    ```bash
-    samtools view sample.bam | awk '$1 != r {r = $1; n++; if (/MD:Z:0[ACGT]/) m++} END {print m / n}'
-    ```
-
-    A share of a few percent or less is normal. Tens of percent means that many
-    reads carry an untemplated nucleotide: align these libraries with STAR.
+The other flags of the report point to the library or to the steps before
+the alignment: [Flags](../flags/index.md).

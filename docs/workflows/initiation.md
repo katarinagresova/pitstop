@@ -24,7 +24,7 @@ translation of these ORFs.
   for example harringtonine with puromycin and no elongation library: `starts`
   needs an elongation library for each initiation library.
 
-![The initiation and elongation workflow, one card per step. Step 2: pitstop quant on each library writes qc.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv writes catalogue.tsv and lengths.tsv. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
+![The initiation and elongation workflow, one card per step. Step 2: pitstop inspect on each library writes inspect.html and lengths.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv writes catalogue.tsv and lengths.tsv. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
 
 `orfs` runs two times. The first run, with no ORF table, gives the P-sites
 that `starts` reads. The second run counts the reads of the ORFs that `starts`
@@ -51,39 +51,36 @@ The examples have one condition (pool `ctrl`) with two replicates:
 
 ```bash
 for lib in harr_1 harr_2 elong_1 elong_2; do
-    pitstop quant --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
-        --read-lengths 18-34 --out-prefix out/$lib
+    pitstop inspect --bam $lib.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/$lib
 done
+multiqc out/
 ```
 
-Check the read lengths and the frame of each library as for [elongation
-libraries](elongation.md#2-check-the-read-lengths). An initiation library
-often has a weaker frame than its elongation library.
+Check the report of each library as for [elongation
+libraries](elongation.md#2-check-the-read-lengths), and repair a library if
+its report says so ([step 1 there](elongation.md#1-qc-of-each-library)). An
+initiation library often has a weaker frame than its elongation library.
 
-Then compare each initiation library with its elongation library. The share of
-each read length, for the reads with the 5′ end in a CDS, and the distance
-between the two distributions (0: the same; 1: no length in common):
+Then compare each initiation library with its elongation library. The plot
+of the read lengths in MultiQC shows them together. The two distributions
+should peak at the same length and have the same shape. The distance between
+the read lengths of their reads in the CDS interior (0: the same; 1: no
+length in common), from the two `lengths.tsv`:
 
 ```python
 import pandas as pd
 
-
-def lengths(path):
-    qc = pd.read_csv(path, sep="\t").dropna(subset=["phase"])
-    n = qc.groupby("length").reads.sum()
-    return n / n.sum()
-
-
-pair = pd.DataFrame({"initiation": lengths("out/harr_1.qc.tsv"),
-                     "elongation": lengths("out/elong_1.qc.tsv")}).fillna(0)
-print(pair.loc[20:36].round(3).to_string())
-print("distance:", round(0.5 * (pair.initiation - pair.elongation).abs().sum(), 2))
+a, b = (pd.read_csv(f"out/{lib}.lengths.tsv", sep="\t", index_col="length")["interior"]
+        for lib in ("harr_1", "elong_1"))
+print("distance:", round(0.5 * (a / a.sum()).sub(b / b.sum(), fill_value=0).abs().sum(), 2))
 ```
 
-The two distributions should peak at the same length and have the same
-shape. If the initiation library peaks several nt longer (for example at
-31-32 nt against 28 nt), it was digested less. Pair it with an elongation
-library of the same digestion if you have one, or leave the pair out.
+Pairs of the same digestion had distances of 0.10-0.20 in our checks, and
+pairs of a different digestion 0.59-0.74. If the initiation library peaks
+several nt longer (for example at 31-32 nt against 28 nt), it was digested
+less, and its flag [under-digestion](../flags/under-digestion.md) fails or
+warns. Pair it with an elongation library of the same digestion if you have
+one, or leave the pair out.
 
 ### 3. Pool offsets
 

@@ -26,7 +26,7 @@ own ORF table.
   ([Love et al. 2014](#references)), as deltaTE does for translation
   efficiency ([Chothani et al. 2019](#references)).
 
-![The workflow for comparing conditions, one card per step. Step 2: pitstop quant on every library writes quant.tsv and qc.tsv. Step 3: one pitstop starts --scan run with a pool per condition (or your own ORF table) writes catalogue.tsv. Step 4: pitstop quant on all elongation libraries merged writes offsets.tsv. Step 5: pitstop orfs --orfs on each elongation library, with the catalogue and these offsets, writes orfs.tsv. Step 6: pitstop score on all libraries of both conditions writes scores.tsv. Step 7, outside pitstop: your tests, for example with DESeq2 or deltaTE, take quant.tsv, orfs.tsv and scores.tsv.](../img/workflow-conditions.svg)
+![The workflow for comparing conditions, one card per step. Step 2: pitstop inspect on every library writes inspect.html, and pitstop quant on each elongation library writes quant.tsv. Step 3: one pitstop starts --scan run with a pool per condition (or your own ORF table) writes catalogue.tsv. Step 4: pitstop quant on all elongation libraries merged writes offsets.tsv. Step 5: pitstop orfs --orfs on each elongation library, with the catalogue and these offsets, writes orfs.tsv. Step 6: pitstop score on all libraries of both conditions writes scores.tsv. Step 7, outside pitstop: your tests, for example with DESeq2 or deltaTE, take quant.tsv, orfs.tsv and scores.tsv.](../img/workflow-conditions.svg)
 
 ## Three rules
 
@@ -59,17 +59,27 @@ elongation libraries `elong_ctrl_1` ... `elong_treat_3`, initiation libraries
 
 ```bash
 for lib in elong_{ctrl,treat}_{1,2,3} harr_{ctrl,treat}_{1,2,3}; do
+    pitstop inspect --bam $lib.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/$lib
+done
+multiqc out/
+```
+
+Check each library's report ([Elongation
+libraries](elongation.md#2-check-the-read-lengths)), each initiation library
+against its elongation library ([Initiation and elongation
+libraries](initiation.md#2-qc-of-each-library-and-of-each-pair)), and the
+read lengths of the conditions against each other: MultiQC shows all
+libraries in one plot. Repair a library if its report says so. Choose
+`--read-lengths` for the next steps from these checks.
+
+Then count the reads per CDS of the elongation libraries:
+
+```bash
+for lib in elong_{ctrl,treat}_{1,2,3}; do
     pitstop quant --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
         --read-lengths 18-34 --out-prefix out/$lib
 done
 ```
-
-Check each library's read lengths and frame ([Elongation
-libraries](elongation.md#2-check-the-read-lengths)), each initiation library
-against its elongation library ([Initiation and elongation
-libraries](initiation.md#2-qc-of-each-library-and-of-each-pair)), and the
-read lengths of the conditions against each other. Choose `--read-lengths`
-for the next steps from these checks.
 
 `quant.tsv` of the elongation libraries gives the CDS counts for the tests.
 With each library's own offsets, the CDS counts are fine: a whole CDS has

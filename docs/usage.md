@@ -1,8 +1,10 @@
 # Usage
 
 Every command reads transcriptome alignments and writes tab-separated tables,
-`<prefix>.<table>.tsv`. How each step works: [Method: quant](method.md),
-[ORF counting](orfs.md) and [start sites](starts.md).
+`<prefix>.<table>.tsv`; `inspect` also writes an HTML report, and `repair` a
+new BAM. How each step works: [Method: quant](method.md),
+[ORF counting](orfs.md) and [start sites](starts.md). What the flags of
+`inspect` mean: [Flags](flags/index.md).
 
 ## Install
 
@@ -21,8 +23,139 @@ git clone https://github.com/katarinagresova/pitstop.git
 cd pitstop
 mamba env create -p .env -f environment.yml
 .env/bin/pip install --no-deps -e .
-.env/bin/python -m pytest          # 52 tests on synthetic data with known truth
+.env/bin/python -m pytest          # tests on synthetic data with known truth
 ```
+
+## Read QC: `inspect`
+
+`pitstop inspect` checks one library: which read lengths keep one reading
+frame, where their reads fall, what is at the read ends, and how many distinct
+footprints the library has. It gives flags for common library problems, the
+read lengths to use, and an HTML report. Run it on each library before the
+other commands.
+
+```bash
+pitstop inspect --bam sample.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/sample
+```
+
+The inputs are those of `quant` (no `--read-lengths`: `inspect` looks at
+every length). It reads the alignments that the other commands read: sense
+alignments of matches with soft clips at the ends, on transcripts of the GTF.
+A 5′ soft clip is not part of the footprint, and the length of a read is its
+footprint length. A read with several alignments is split over them (over its
+alignments to transcripts with a CDS, if it has some), so each read counts
+once. The mismatch tables need the read sequences in the BAM.
+
+Words of the tables:
+
+- **CDS interior**: the read is at least 15 nt inside the CDS at both ends.
+- **Phase** of a read: (5′ end − CDS start) mod 3. The **top-phase share**
+  (`top_frame`) of a length: the share of its top phase in the CDS interior.
+- **Start peak** of a length: its commonest 5′ end at the annotated start
+  codons, in nt -20 to -4 from the first nt of the start codon. **Beside**:
+  the larger of the two nt beside the peak, as a share of the peak.
+- **Offset** of a length: minus its start peak, or 12 nt with fewer than 20
+  reads at the peak. The P-site of a read is its 5′ end plus the offset.
+- **Class** of a length, the first rule that holds:
+
+    | Class | Rule |
+    |---|---|
+    | `few reads` | fewer than 100 reads in the CDS interior, or less than 0.3% of the reads |
+    | `short state` | 20-22 nt, the start peak at nt -12 with 20 reads or more, and half of the P-sites or more in the CDS ([short state](flags/short-state.md)) |
+    | `clean` | top-phase share 0.7 or more |
+    | `no frame` | else |
+
+- **Suggested read lengths**: of the runs of consecutive clean lengths, the
+  one with the most reads.
+- **After repair**: the values that the reads would have after `pitstop
+  repair` (the same rule, on each read).
+
+| Output | Content |
+|---|---|
+| `<prefix>.inspect.html` | the report (below) |
+| `<prefix>.summary.tsv` | one row. The inputs (`library bam gtf fasta`: file names, no paths) and `pitstop` (the version). The reads: `reads_forward alignments_dropped_cigar reads_cigar_ok refs_not_in_gtf alignments_dropped_ref_not_in_gtf` (as `quant`'s `stats.tsv`), `reads` (the reads that count), `reads_on_cds_transcript`, `reads_nh1 reads_nh2 reads_nh3 reads_nh4plus` (by number of alignments). Complexity: `distinct_share` (distinct footprints per read), `new_per_read` (the new footprints per read in the last 10% of the reads), `distinct_share_at_depth` (in a subsample of 1 million reads; `NA` with fewer). Lengths: `common_length max_length`, `long_share` (32 nt or more), `short_share` (22 nt or less), `disome_share` (50-70 nt). The 3′ end spread: `end3_peak end3_reads end3_spread` ([under-digestion](flags/under-digestion.md)). Regions: `cds_share` (of the P-sites), `short_reads short_cds_share` (20-22 nt), `length_distance` (total-variation distance of the read lengths on CDSs and on transcripts without a CDS). Frame: `classed_lengths` (lengths with a class other than `few reads`), `clean_share clean_lengths read_lengths`, the same with `_repaired`, `best_length best_top_frame` (the length with the highest top-phase share, short state and few reads left out), `mixed_lengths`. Read ends: `mismatch5` (first nt), `mismatch5_inner` (the higher of nt 2 and 3), `mismatch5_background` (nt 4-7), `mismatch5_T` (the share of T among the mismatched first nt), `mismatch3` (the higher of the last two nt), `mismatch3_background`, `clip5_share` (reads with a 5′ soft clip), `untemplated_hidden` (an estimate: added nt that match the transcript), `bias_max bias_max_at` (the strongest nt preference at a cut, and where). The flags: `flag_weak_frame flag_long_reads flag_under_digestion flag_untemplated flag_end_spike flag_mixed_lengths flag_short_state flag_low_complexity` ([Flags](flags/index.md)). `repair`: `yes` if `repair` helps this BAM. |
+| `<prefix>.lengths.tsv` | per footprint length: `reads share`; `interior` (reads in the CDS interior), `phase0 phase1 phase2` (their shares), `top_phase top_frame`; at the annotated starts, `start_reads` (reads with the 5′ end in the window), `start_peak start_peak_share start_beside`; at the annotated stops the same for the 3′ ends (`stop_reads stop_peak stop_peak_share stop_beside`, nt from the first nt of the stop codon); `offset`; the share of the P-sites per region, `leader CDS trailer transcript` (`trailer`: the stop codon and after; `transcript`: on transcripts without a CDS); `class`; `mixed` (the start peak has 20 reads or more and beside it 0.5 of them or more: [mixed lengths](flags/mixed-lengths.md)); after repair, `reads_repaired top_frame_repaired class_repaired`. |
+| `<prefix>.anchors.tsv` | `length anchor end x reads share`: per length, the reads by the position of the 5′ end at nt -30 to 0 from the annotated starts (`anchor` `start`), and by the position of the 3′ end at nt -5 to 30 from the first nt of the stop codons (`stop`). `share`: of the length's reads in that window. |
+| `<prefix>.ends.tsv` | per length and end (`end` 5 or 3), and for all lengths (`length` `all`): `reads`; `clip1 clip2 clip3plus` (the share with a soft clip of 1, 2, 3 or more nt); `mm0`-`mm7` (the mismatch rate at positions 0-7 from that end; a soft clip included, so position 0 is the first nt of the read); `mm0_A`-`mm0_T` (the read nt at a mismatched position 0); `cut_A`-`cut_T` (the transcript nt at the cut: the first or the last nt of the footprint); `bias_A`-`bias_T` (the share of a nt at the cut over its share one codon inside the footprint). |
+| `<prefix>.complexity.tsv` | `fraction reads distinct`: per subsample of 10%, 20%, ... 100% of the reads (fixed by the read name, no random numbers), the reads and the distinct footprints (transcript, 5′ end, length). |
+| `<prefix>.inspect_general_mqc.json`, `<prefix>.inspect_lengths_mqc.json`, `<prefix>.inspect_frame_mqc.json` | for MultiQC (below). |
+
+### The report
+
+`<prefix>.inspect.html` is one file: it needs no other file and no network,
+so you can send it or keep it with the data. It follows the light or dark
+theme of the browser. Each number in it is also in a table, and a rerun gives
+a byte-identical report.
+
+- **Verdict and next steps**: the read lengths to use, as `--read-lengths`;
+  the fix for the alignment and `repair`, if they help; advice for each
+  problem that they cannot fix; and the table of the flags. Each flag links
+  to its section of the report and to its [page](flags/index.md).
+- **The reads that pitstop reads**: the reads after each filter, and by
+  number of alignments.
+- **Depth and complexity**: the distinct footprints against the reads.
+- **Read lengths**: the reads per length, by class.
+- **Regions per length**: where the P-sites of each length fall.
+- **Frame per length**: the phases in the CDS interior, against the cut of a
+  clean length, and after repair.
+- **Ends at the annotated starts and stops**: the 5′ ends at the start codons
+  and the 3′ ends at the stop codons, per length.
+- **Read ends against the transcript**: the mismatches by position from each
+  end, the soft clips, and the nucleotide preference at the cuts.
+- **Not in this report**: what other tools check (raw reads, rRNA).
+
+### Several libraries: MultiQC
+
+`inspect` writes MultiQC files (names that end in `_mqc.json`). MultiQC
+finds them, with no configuration, and shows all libraries in one report: a
+row of the general statistics per library (the clean share, now and after
+repair, the 5′ mismatch, the share of 32 nt or more, the distinct share at 1
+million reads, the flags that fail and warn), the read lengths of all
+libraries in one plot, and the top-phase share per length of all libraries.
+
+```bash
+multiqc out/
+```
+
+## Read repair: `repair`
+
+`pitstop repair` clips the untemplated 5′ nucleotide: an extra nucleotide at
+the 5′ end of a read that is not in the transcript. `inspect` says when it
+helps (the flag [untemplated 5′ nt](flags/untemplated.md), and `repair` in
+`summary.tsv`). Its report gives the fix at the alignment first: an aligner
+that soft-clips the read ends removes the nucleotide, and a new alignment is
+better than a repair. `repair` is for the BAM that you have: from another
+pipeline, or from an aligner that cannot soft-clip.
+
+```bash
+pitstop repair --bam sample.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/sample.repaired
+pitstop inspect --bam out/sample.repaired.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/sample.repaired
+```
+
+The rule looks at the first 2 nt of each read. From the first aligned nt on,
+a nt that does not match the transcript becomes a soft clip. It stops at the
+first match or at an N, and at least one nt stays aligned. A 5′ soft clip of
+the aligner counts towards the 2 nt, so a second run changes nothing. The
+rule applies to each alignment of a read (each isoform), and only to the
+alignments that the other commands read; it copies all other records. It
+changes the position, the CIGAR, and the tags NM and MD where the alignment
+has them; not the sequence, the qualities or other tags. Every pitstop
+command leaves a 5′ soft clip out of the footprint, so all of them read the
+new BAM as it is. `inspect`'s values after repair use the same rule: they
+are those of `inspect` on the new BAM.
+
+| Output | Content |
+|---|---|
+| `<prefix>.bam` | the BAM, in the order of the input, with a `@PG` line in the header. A BAM sorted by coordinate stays sorted, and gets an index, `<prefix>.bam.bai`. |
+| `<prefix>.repair.tsv` | `length clipped alignments reads`: per footprint length before the repair (the read length without a 5′ soft clip) and number of clipped nt (0-2), the alignments that `repair` looked at, and the reads (by their primary alignment). |
+
+What `repair` does not do: it does not trim a fixed number of nucleotides
+(trim them before the alignment: [end spike](flags/end-spike.md)), and no
+rule for each read fixes [under-digestion](flags/under-digestion.md),
+[mixed lengths](flags/mixed-lengths.md), or an added nucleotide that matches
+the transcript by chance. It does not touch the 20-22 nt reads of the [short
+state](flags/short-state.md): they are ribosomes. It does not filter by
+length: each command has `--read-lengths`.
 
 ## Counts per CDS: `quant`
 

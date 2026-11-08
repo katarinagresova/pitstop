@@ -68,8 +68,10 @@ for quality-control plots.
 
 Not sure which `--read-lengths` to use? `pitstop inspect` checks a library and
 names the read lengths that keep their reading frame. If it finds extra
-nucleotides at the 5' end of the reads, `pitstop repair` clips them and writes a
-new BAM for the other commands.
+nucleotides at the 5' end of the reads, let the aligner clip them the next time
+(STAR with `--quantTranscriptomeSAMoutput BanSingleEnd`, or bowtie2 `--local`).
+For the BAM you have, `pitstop repair` clips them and writes a new BAM for the
+other commands.
 
 To test candidate uORFs, count reads on your ORF table in each replicate, then
 score the ORFs over all of them:
@@ -89,6 +91,8 @@ from harringtonine libraries, see [Usage](https://katarinagresova.github.io/pits
 **[katarinagresova.github.io/pitstop](https://katarinagresova.github.io/pitstop/)**
 
 - [Usage](https://katarinagresova.github.io/pitstop/usage/): every command, input format and output column
+- [Read QC flags](https://katarinagresova.github.io/pitstop/flags/): what each flag of `pitstop inspect` means,
+  its cut and why, and what to do
 - [Typical workflows](https://katarinagresova.github.io/pitstop/#typical-workflows): which commands to run, in which
   order, for elongation libraries, initiation and elongation libraries, and comparisons of conditions
 - [Method: quant](https://katarinagresova.github.io/pitstop/method/): offsets, assignment and the EM, with interactive examples

@@ -18,7 +18,7 @@ initiation libraries.
   pitstop, add initiation libraries: [Initiation and elongation
   libraries](initiation.md).
 
-![The elongation workflow, one card per step. Your BAMs go into step 1, pitstop quant on each library, which writes quant.tsv and qc.tsv. Step 2: check the read lengths in qc.tsv and choose --read-lengths. Step 3: pitstop quant on all libraries merged writes offsets.tsv. Step 4: pitstop orfs --orfs on each library, with the BAMs, your ORF table and offsets.tsv, writes orfs.tsv. Step 5: pitstop score on all libraries together writes scores.tsv.](../img/workflow-elongation.svg)
+![The elongation workflow, one card per step. Your BAMs go into step 1, pitstop inspect on each library, which writes inspect.html and summary.tsv. Step 2: check the read lengths in the reports and in MultiQC, choose --read-lengths, and repair a BAM if its report says so. Step 3: pitstop quant on each library writes quant.tsv. Step 4: pitstop quant on all libraries merged writes offsets.tsv. Step 5: pitstop orfs --orfs on each library, with the BAMs, your ORF table and offsets.tsv, writes orfs.tsv. Step 6: pitstop score on all libraries together writes scores.tsv.](../img/workflow-elongation.svg)
 
 ## Inputs
 
@@ -41,53 +41,77 @@ tables from other tools](orf-tables.md).
 
 ## Steps
 
-### 1. Counts per CDS, and QC
+### 1. QC of each library
+
+```bash
+for lib in ctrl_1 ctrl_2 ctrl_3; do
+    pitstop inspect --bam $lib.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/$lib
+done
+multiqc out/
+```
+
+`out/ctrl_1.inspect.html` is the report of one library: its flags, the read
+lengths to use, and what to do next ([Usage](../usage.md#read-qc-inspect)).
+MultiQC shows all libraries side by side: the read lengths, and the
+top-phase share of each length.
+
+If the report says so (the flag [untemplated 5′
+nt](../flags/untemplated.md) fails), align the library again with soft clips
+at the read ends ([Preparing the reads](reads.md#star-recommended)). For a
+BAM that you cannot align again, repair it, and inspect the new BAM:
+
+```bash
+pitstop repair --bam ctrl_1.bam --gtf annotation.gtf --fasta genome.fa --out-prefix out/ctrl_1.repaired
+pitstop inspect --bam out/ctrl_1.repaired.bam --gtf annotation.gtf --fasta genome.fa \
+    --out-prefix out/ctrl_1.repaired
+```
+
+Then use `out/ctrl_1.repaired.bam` in all next steps, and take the read
+lengths from its report.
+
+### 2. Check the read lengths
+
+"Next steps" in each report gives the read lengths to use, as
+`--read-lengths` (`read_lengths` in `summary.tsv`): the clean lengths, those
+with 0.7 or more of their reads in the CDS interior in one phase.
+
+- **One range for all libraries** that you count together: the lengths that
+  are clean in all of them. The plot of the top-phase share in MultiQC shows
+  them. The examples below use 26-30 nt:
+
+    ```bash
+    LENGTHS=26-30
+    ```
+
+- **A top-phase share near 1/3 means no frame**: the P-site of these reads is
+  not known. Leave such lengths out of `--read-lengths`.
+- **No length with a clear frame** points to the library, not to pitstop.
+  The flags of the report name the cause, if it is a known one: an
+  untemplated 5′ nucleotide kept by the aligner, nucleotides left at a read
+  end, or too little nuclease digestion ([Flags](../flags/index.md)).
+- **Short footprints** (about 20-22 nt) come from ribosomes in another state
+  than the 28-30 nt footprints ([short state](../flags/short-state.md)). They
+  can have a frame of their own and an offset of their own: `offsets.tsv`
+  gives one per length.
+
+### 3. Counts per CDS
 
 ```bash
 for lib in ctrl_1 ctrl_2 ctrl_3; do
     pitstop quant --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
-        --read-lengths 18-30 --out-prefix out/$lib
+        --read-lengths $LENGTHS --out-prefix out/$lib
 done
 ```
 
 `quant.tsv` has the reads per CDS (`NumReads`), with the reads of shared
-sequence split between isoforms and paralogs. `qc.tsv` has the reads per read
-length, region and frame, at every read length, not only those of
-`--read-lengths`.
+sequence split between isoforms and paralogs.
 
-### 2. Check the read lengths
-
-The share of each read length, and how much of it is in its top frame (reads
-with the 5′ end in a CDS):
-
-```python
-import pandas as pd
-
-qc = pd.read_csv("out/ctrl_1.qc.tsv", sep="\t").dropna(subset=["phase"])
-t = qc.pivot_table(index="length", columns="phase", values="reads", aggfunc="sum", fill_value=0)
-frame = pd.DataFrame({"share": t.sum(axis=1) / t.to_numpy().sum(),
-                      "top_frame": t.max(axis=1) / t.sum(axis=1)})
-print(frame.round(2).to_string())
-```
-
-- **The main footprint lengths** hold most reads, and most of their reads are
-  in one frame. A top frame near 1/3 means no frame: the P-site of these reads
-  is not known, so leave such lengths out of `--read-lengths`, and run `quant`
-  again if the range changes.
-- **No length with a clear frame** points to the library, not to pitstop:
-  extra nucleotides left at a read end, untemplated 5′ nucleotides kept by an
-  end-to-end aligner ([Preparing the reads](reads.md#check-the-alignment)), or
-  too little nuclease digestion (most reads longer than about 30 nt).
-- **Short footprints** (about 20-22 nt) come from ribosomes in another state
-  than the 28-30 nt footprints. They can have a frame of their own and an
-  offset of their own: `offsets.tsv` gives one per length.
-
-### 3. One offsets table for all libraries
+### 4. One offsets table for all libraries
 
 ```bash
 samtools cat -o all.bam ctrl_1.bam ctrl_2.bam ctrl_3.bam
 pitstop quant --bam all.bam --gtf annotation.gtf --fasta genome.fa \
-    --read-lengths 18-30 --out-prefix out/all
+    --read-lengths $LENGTHS --out-prefix out/all
 ```
 
 The offsets of short read lengths can differ between libraries by a codon or
@@ -96,12 +120,12 @@ counts are only comparable between libraries that share one offsets table:
 here the table of all libraries merged (the table of the deepest library also
 works).
 
-### 4. Counts per ORF
+### 5. Counts per ORF
 
 ```bash
 for lib in ctrl_1 ctrl_2 ctrl_3; do
     pitstop orfs --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
-        --read-lengths 18-30 --orfs orfs.tsv --offsets out/all.offsets.tsv \
+        --read-lengths $LENGTHS --orfs orfs.tsv --offsets out/all.offsets.tsv \
         --out-prefix out/$lib
 done
 ```
@@ -110,7 +134,7 @@ done
 parts of each transcript in no ORF (`<transcript>:leader`, `:trailer`). Every
 P-site keeps its reading frame.
 
-### 5. Frame evidence
+### 6. Frame evidence
 
 ```bash
 pitstop score --orfs-prefix out/ctrl_1 out/ctrl_2 out/ctrl_3 --out-prefix out/all
