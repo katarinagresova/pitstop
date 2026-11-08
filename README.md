@@ -11,7 +11,7 @@
 </div>
 
 <picture>
-<img alt="pitstop at a glance: reading frames drawn as the three lanes of a race track. Ribosomes keep to their ORF's lane, so a uORF whose reads stay in its frame is translated (pitstop orfs + score); harringtonine holds ribosomes on start codons (pitstop starts); reads are counted per coding sequence (pitstop quant)." src="docs/assets/pitstop-abstract-auto.svg" width="100%">
+<img alt="pitstop at a glance: reading frames drawn as the three lanes of a race track. Ribosomes keep to their ORF's lane, so a uORF whose reads stay in its frame is translated (pitstop orfs + score); harringtonine holds ribosomes on start codons (pitstop starts); reads are counted per coding sequence (pitstop quant); each library is checked first, for the read lengths that keep their lane (pitstop inspect); and extra 5' nucleotides are clipped from its reads (pitstop repair)." src="docs/assets/pitstop-abstract-auto.svg" width="100%">
 </picture>
 
 pitstop is a Python toolkit for ribosome profiling (Ribo-seq). Give it
@@ -20,15 +20,17 @@ straight into your analysis.
 
 ## What it does
 
-<picture>
-<img alt="One transcript with a uORF (CUG start) and a CDS (AUG start), and two read tracks above it. Harringtonine reads peak at both start codons, above what the Ribo-seq reads predict (pitstop starts). Ribo-seq P-sites are coloured by reading frame: on the uORF most keep the uORF's frame (pitstop orfs + score), on the CDS the CDS's frame (pitstop quant)." src="docs/assets/pitstop-transcript-auto.svg" width="100%">
-</picture>
-
 | Question | Command | You get |
 |---|---|---|
+| Is my library good, and which read lengths do I use? | `pitstop inspect` | an HTML report and tables: for each read length, how well its reads keep one reading frame, flags for common library problems, and the read lengths to use |
+| Can my reads be repaired? | `pitstop repair` | a new BAM in which extra 5' nucleotides that do not match the transcript are clipped, and a table of the reads it changed |
 | How much is each coding sequence translated? | `pitstop quant` | reads per CDS, with reads shared by isoforms or paralogs split between them |
 | Which uORFs and other small ORFs are translated? | `pitstop orfs`, `pitstop score` | for each ORF in your table, how strongly its reads follow its reading frame, with a p-value |
 | Where does translation start? | `pitstop starts` | start sites at ATG and near-cognate codons from harringtonine libraries, and a uORF catalogue from them |
+
+<picture>
+<img alt="One transcript with a uORF (CUG start) and a CDS (AUG start), and two read tracks above it. Harringtonine reads peak at both start codons, above what the Ribo-seq reads predict (pitstop starts). Ribo-seq P-sites are coloured by reading frame: on the uORF most keep the uORF's frame (pitstop orfs + score), on the CDS the CDS's frame (pitstop quant). A bar chart of the read lengths of a library marks the lengths whose reads keep one frame (pitstop inspect). Reads with an extra 5' nucleotide are shown before and after it is clipped (pitstop repair)." src="docs/assets/pitstop-transcript-auto.svg" width="100%">
+</picture>
 
 ## Why pitstop
 
@@ -66,6 +68,11 @@ pitstop quant --bam sample.bam --gtf annotation.gtf --fasta genome.fa \
 This writes `out/sample.quant.tsv` (reads per CDS), `out/sample.offsets.tsv`
 (the P-site offset of each read length) and a few more tables, among them one
 for quality-control plots.
+
+Not sure which `--read-lengths` to use? `pitstop inspect` checks a library and
+names the read lengths that keep their reading frame. If it finds extra
+nucleotides at the 5' end of the reads, `pitstop repair` clips them and writes a
+new BAM for the other commands.
 
 To test candidate uORFs, count reads on your ORF table in each replicate, then
 score the ORFs over all of them:
