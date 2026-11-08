@@ -73,6 +73,8 @@ pitstop score --orfs-prefix out/sample_rep1 out/sample_rep2 --out-prefix out/poo
 `--orfs` is a TSV `ORF_id Name start end` (0-based transcript coordinates,
 `start` = first nt of the start codon, `end` = one past the last sense codon,
 same convention as the CDS). The annotated CDSs are added automatically.
+From the output of an ORF caller, or from genome coordinates: [ORF tables from
+other tools](workflows/orf-tables.md).
 
 To compare conditions, give every library the same GTF, ORF table and
 offsets table, and score all libraries together:

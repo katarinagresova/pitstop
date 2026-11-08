@@ -23,6 +23,23 @@ straight into your analysis.
 | Which uORFs and other small ORFs are translated? | `pitstop orfs`, `pitstop score` | for each ORF in your table, how strongly its reads follow its reading frame, with a p-value |
 | Where does translation start? | `pitstop starts` | start sites at ATG and near-cognate codons from harringtonine libraries, and a uORF catalogue from them |
 
+## Typical workflows
+
+Which commands you run, and in which order, depends on your libraries. Each
+workflow page describes the experiment, the inputs, the commands with
+examples, and what to watch for.
+
+| Your libraries | Workflow | Commands |
+|---|---|---|
+| Ribo-seq of elongating ribosomes | [Elongation libraries](workflows/elongation.md) | `quant`; `orfs` and `score` on your ORF table |
+| Harringtonine or lactimidomycin libraries, each with a matched elongation library | [Initiation and elongation libraries](workflows/initiation.md) | `quant`, `orfs`, `starts`, `plot`; then `orfs` and `score` on the new ORFs |
+| Either of these, in two or more conditions | [Comparing conditions](workflows/conditions.md) | the same, with one ORF table and one offsets table for all libraries; then your own tests on the counts |
+
+Every workflow starts from transcriptome alignments: [Preparing the
+reads](workflows/reads.md) covers the trimming, the contaminants, and the
+alignment with STAR or bowtie. To count ORFs from an ORF caller or from genome
+coordinates: [ORF tables from other tools](workflows/orf-tables.md).
+
 ## Why
 
 Ribo-seq quantification needs the isoform-length term accounted for, a fit
@@ -37,6 +54,9 @@ simulation alone.
 
 - **[Usage](usage.md)**: install, the commands, their inputs, and every
   output column.
+- **[Typical workflows](#typical-workflows)**: which commands to run, in
+  which order, from [preparing the reads](workflows/reads.md) to the tables
+  for your tests.
 - **[Method: quant](method.md)**: how offsets, P-site assignment, and
   quantification work, with interactive examples.
 - **[Method: ORF counting](orfs.md)**: ORF types, outside components, the

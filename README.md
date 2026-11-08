@@ -85,6 +85,8 @@ from harringtonine libraries, see [Usage](https://katarinagresova.github.io/pits
 **[katarinagresova.github.io/pitstop](https://katarinagresova.github.io/pitstop/)**
 
 - [Usage](https://katarinagresova.github.io/pitstop/usage/): every command, input format and output column
+- [Typical workflows](https://katarinagresova.github.io/pitstop/#typical-workflows): which commands to run, in which
+  order, for elongation libraries, initiation and elongation libraries, and comparisons of conditions
 - [Method: quant](https://katarinagresova.github.io/pitstop/method/): offsets, assignment and the EM, with interactive examples
 - [Method: ORF counting](https://katarinagresova.github.io/pitstop/orfs/): the frame score, with an interactive example and
   validation on real data
