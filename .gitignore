@@ -40,8 +40,13 @@ htmlcov/
 # agents
 CLAUDE.md
 PLAN.md
+PLAN_M3.md
+PLAN_M4.md
+FINDINGS.md
+INITIAL_EXPLORATION.md
 
 # local
 validation/
+manuscript/
 design/
 .env*
