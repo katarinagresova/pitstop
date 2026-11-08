@@ -70,6 +70,8 @@ def em(unique, classes, counts, lengths, tol, max_iter):
     classes_t = classes.T.tocsr()
     sizes = np.diff(classes.indptr)
     n = unique.sum() + counts.sum()
+    pos = np.flatnonzero(unique > 0)
+    unique_pos = unique[pos]
 
     def step(alpha):
         w = alpha / lengths
@@ -77,7 +79,7 @@ def em(unique, classes, counts, lengths, tol, max_iter):
 
     def loglik(alpha):
         w = alpha / lengths / n
-        return (unique[unique > 0] * np.log(w[unique > 0])).sum() + (counts * np.log(classes @ w)).sum()
+        return (unique_pos * np.log(w[pos])).sum() + (counts * np.log(classes @ w)).sum()
 
     alpha = unique + (classes_t > 0) @ (counts / sizes)
     ll, steps, change = loglik(alpha), 0, np.inf
@@ -96,9 +98,10 @@ def em(unique, classes, counts, lengths, tol, max_iter):
         vv = (v * v).sum()
         s = min(-np.sqrt((r * r).sum() / vv), -1.0) if vv > 0 else -1.0
         # s = -1 is a2, two plain EM steps; move s towards it until no positive count turns <= 0
+        not_pos = ~(alpha > 0)
         for _ in range(30):
             ext = alpha - 2 * s * r + s * s * v
-            if (ext[alpha > 0] > 0).all():
+            if ((ext > 0) | not_pos).all():
                 break
             s = (s - 1) / 2
         else:
