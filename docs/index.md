@@ -34,7 +34,7 @@ examples, and what to watch for.
 | Your libraries | Workflow | Commands |
 |---|---|---|
 | Ribo-seq of elongating ribosomes | [Elongation libraries](workflows/elongation.md) | `quant`; `orfs` and `score` on your ORF table |
-| Harringtonine or lactimidomycin libraries, each with a matched elongation library | [Initiation and elongation libraries](workflows/initiation.md) | `quant`, `orfs`, `starts`, `plot`; then `orfs` and `score` on the new ORFs |
+| Harringtonine or lactimidomycin libraries, each with a matched elongation library | [Initiation and elongation libraries](workflows/initiation.md) | `quant`, `orfs`, `starts`; then `orfs` and `score` on the new ORFs |
 | Either of these, in two or more conditions | [Comparing conditions](workflows/conditions.md) | the same, with one ORF table and one offsets table for all libraries; then your own tests on the counts |
 
 Every workflow starts from transcriptome alignments: [Preparing the

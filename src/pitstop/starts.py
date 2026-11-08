@@ -24,7 +24,7 @@ keeps out short RNA fragments), calibrated and not mixed in every harringtonine 
 library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of them in the top frame); of the runs of consecutive such
 lengths, the one with the most P-sites. Only their P-sites count, one per alignment. <prefix>.lengths.tsv has the
 QC and each length's offset (the orfs run's, plus the shift), <prefix>.profiles.tsv the profiles behind it
-(P-sites from the pool's offsets, before the calibration) for `pitstop plot`.
+(P-sites from the pool's offsets, before the calibration).
 
 Background, per pool. The harringtonine / elongation ratio depends on the region, and in the CDS on
 the distance from the start (run-off). h = s_t f_b e: a factor per bin of region and distance (BINS),

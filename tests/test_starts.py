@@ -1,5 +1,4 @@
 import filecmp
-import re
 
 import numpy as np
 import pandas as pd
@@ -313,21 +312,6 @@ def test_length_window(started, tmp_path):
     qc = pd.read_csv(tmp_path / "g.lengths.tsv", sep="\t")
     assert qc.loc[qc["start_length"], "length"].unique().tolist() == [29, 30]
     assert pd.read_csv(tmp_path / "g.starts_stats.tsv", sep="\t").set_index("stat").at["start_lengths", "value"] == "29,30"
-    # pitstop plot draws the lengths in the window and the start lengths; all if that leaves none
-    from pitstop import plot
-    assert plot.length_window(qc) == (31, 34) and plot.shown(qc) == [29, 30]
-    assert plot.shown(pd.read_csv(tmp_path / "w.lengths.tsv", sep="\t")) == [28, 29, 30]
-    assert plot.length_window(pd.read_csv(started["dir"] / "s.lengths.tsv", sep="\t")) is None
-
-
-def test_plot(started, tmp_path):
-    pytest.importorskip("matplotlib")
-    from pitstop import plot
-    a = plot.run(str(started["dir"] / "s"), out=str(tmp_path / "a.pdf"))
-    b = plot.run(str(started["dir"] / "s"), out=str(tmp_path / "b.pdf"))
-    pdf = open(a, "rb").read()
-    assert pdf.startswith(b"%PDF") and len(re.findall(rb"/Type /Page\b(?!s)", pdf)) == 1 + 4   # overview + libraries
-    assert filecmp.cmp(a, b, shallow=False)     # no creation date: a rerun is byte-identical
 
 
 def test_scan_calls(started):

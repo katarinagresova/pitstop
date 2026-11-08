@@ -129,10 +129,11 @@ and calibrated, its move, its offset (the pool's offset plus the move), and
 the verdict (`pass`, or why not). `profiles.tsv` has the profiles behind it:
 per library and length, the P-sites around the annotated starts and stop
 codons and along the CDSs, from the pool's offsets, before the calibration.
-`pitstop plot` draws both ([Usage](usage.md#qc-figures-plot)). Look at it
-before you trust the start lengths: a length that the calibration moves peaks
-at -1 or +1 in its library's profile, and its row gives its offset and the
-move; a mixed length has two bars of about the same height at its peak.
+Look at both ([Usage](usage.md#start-sites-starts)) before you trust the start
+lengths: a length that the calibration moves peaks at -1 or +1 in its
+library's profile, and its row gives its offset and the move; a mixed length
+has two nt with about the same P-sites at its peak (`beside_peak` close to
+`at_peak`).
 
 The **kernel** is the shape of a start: per length, the harringtonine P-sites
 minus the elongation P-sites (scaled on codons 11-20), as a share of nt -15

@@ -24,7 +24,7 @@ translation of these ORFs.
   for example harringtonine with puromycin and no elongation library: `starts`
   needs an elongation library for each initiation library.
 
-![The initiation and elongation workflow, one card per step. Step 2: pitstop quant on each library writes qc.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv, then pitstop plot, writes catalogue.tsv and lengths.pdf. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
+![The initiation and elongation workflow, one card per step. Step 2: pitstop quant on each library writes qc.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv writes catalogue.tsv and lengths.tsv. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
 
 `orfs` runs two times. The first run, with no ORF table, gives the P-sites
 that `starts` reads. The second run counts the reads of the ORFs that `starts`
@@ -129,7 +129,6 @@ ctrl    out/harr_2       out/elong_2
 ```bash
 pitstop starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa \
     --scan --out-prefix out/starts
-pitstop plot --prefix out/starts      # out/starts.lengths.pdf
 ```
 
 `--scan` tests every ATG and near-cognate start codon with initiation reads,
@@ -137,8 +136,8 @@ and calls the starts with q < 0.05. `--start-codons ATG,CTG` tests fewer
 codons, `--fdr` sets the cut, and `--orfs table.tsv` tests the starts of a
 given table instead.
 
-Before you use the calls, look at the read-length QC: `lengths.tsv` and the
-PDF of `plot` ([Usage](../usage.md#qc-figures-plot)). A start length has most
+Before you use the calls, look at the read-length QC: `lengths.tsv` and
+`profiles.tsv` ([Usage](../usage.md#start-sites-starts)). A start length has most
 of its P-sites in one frame and a peak at nt 0 of the annotated starts. Only
 the start lengths count. If no length passes, `starts` stops; if the chosen
 lengths look wrong, give them with `--start-lengths`.

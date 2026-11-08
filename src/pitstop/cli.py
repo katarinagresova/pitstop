@@ -87,11 +87,6 @@ def main(argv=None):
                         "annotated starts are tested whatever their codon")
     t.add_argument("--fdr", type=float, default=starts.FDR,
                    help="the BH cut: the scan calls the starts with q below it, and starts_stats.tsv counts them")
-    g = sub.add_parser("plot", help="QC figures of a `pitstop starts` run: read lengths, frames, profiles "
-                                    "(needs matplotlib: pip install pitstop[plot])")
-    g.add_argument("--prefix", required=True,
-                   help="out prefix of a `pitstop starts` run: reads <prefix>.lengths.tsv and .profiles.tsv, writes "
-                        "<prefix>.lengths.pdf")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if a.command == "quant":
@@ -102,9 +97,6 @@ def main(argv=None):
                  min_support=a.min_offset_support, tol=a.tol, max_iter=a.max_iter)
     elif a.command == "score":
         score.run(a.orfs_prefix, a.out_prefix, frame_lengths=a.frame_lengths)
-    elif a.command == "plot":
-        from . import plot
-        plot.run(a.prefix)
     else:
         starts.run(a.libraries, a.gtf, a.fasta, a.out_prefix, orfs_path=a.orfs, scan=a.scan,
                    start_lengths=a.start_lengths, start_codons=a.start_codons, fdr=a.fdr, window=a.length_window)
