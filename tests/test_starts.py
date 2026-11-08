@@ -83,6 +83,19 @@ def test_near_starts_best_first():
     assert called.tolist() == [True, False, False, True, False] and by.tolist() == [-1, 0, 0, -1, -1]
 
 
+def test_shoulder():
+    # log2 (h + 1) / (e + 1) in the codons 1-5 after a start (nt 3-17), minus the same in nt -18..-4; the reads of the
+    # pools add before the ratio. The window and the nt just outside the two zones do not count
+    s = 50
+    h, e = np.zeros(100, dtype=np.int64), np.zeros(100, dtype=np.int64)
+    h[[s + 3, s + 17]], e[s + 10] = 3, 1
+    h[s - 18], e[s - 4] = 1, 3
+    out = [s - 19, s - 3, s - 1, s, s + 2, s + 18]
+    h[out], e[out] = 100, 50
+    pools = [starts.Pool(h, e, None), starts.Pool(h, e, None)]
+    assert np.allclose(starts.shoulder(pools, np.array([s])), np.log2(13 / 3) - np.log2(3 / 7))
+
+
 @pytest.fixture(scope="module")
 def started(tmp_path_factory):
     # one offset table per pool, from `quant` on the merged harringtonine BAMs (as docs/starts.md advises)
@@ -232,6 +245,11 @@ def test_catalogue(started):
     calls = out[out["called"] & out["type"].isin(["uORF", "uoORF"])]
     assert set(cat.index[cat["type"] != "CDS"]) == set(calls["ORF_id"])
     assert (cat["type"] == "CDS").sum() == 37
+    # the shoulder of each row is its start's in starts.tsv (synthetic leaders have no shoulder contrast: their
+    # harringtonine / elongation ratio, HARR_LEADER, is about the planted kernel's in codons 1-5)
+    shoulder = out.set_index("ORF_id")["shoulder"]
+    assert np.allclose(cat["shoulder"], shoulder[cat.index]) and shoulder.notna().all()
+    assert started["out"]["shoulder"].notna().all()
     data = started["data"]
     for i in ("S1_uATG", "S2_uoORF", "N1_ORF", "S3_ext"):
         n, s, e, _, _ = data["orf_coords"][i]

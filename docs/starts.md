@@ -150,6 +150,12 @@ an elongation peak (a pause) from being shrunk, so a pause is not called.
 - `typical_p` is the $p$ the window would have with the reads of a typical
   used start there: the median enrichment of the annotated starts with 3 or
   more expected reads. If it is large, the start cannot be called.
+- `shoulder` is not part of the test. It is
+  $\log_2 \frac{h + 1}{e + 1}$ over the codons 1-5 after the start (nt 3 to
+  17), minus the same over the 5 codons before its window (nt -18 to -4),
+  with the reads of all pools. Ribosomes that made a few peptide bonds before
+  harringtonine acted raise the codons 1-5 of a used start. A pause, or a peak
+  at a codon that cannot start, mostly does not raise them.
 - `starts_stats.tsv` gives, per class, the rate of null windows at the $p$ of
   the last call, and the false calls that rate gives over the class's tests.
 
@@ -213,9 +219,12 @@ catalogue's ORFs in other libraries, and score their frames with
   that cannot start. In the five pools of the validation, an estimated 7% of
   the leader calls with fewer than 30 expected reads are false, but 11-43% of
   those with 30 or more. Most deep calls also raise their codons 1-5, as a
-  used start does; the peaks at null codons do not. Thus the deep calls stay
-  in the output. Find them by `expected`, and check the harringtonine reads
-  in their codons 1-5 before you use one alone.
+  used start does; most peaks at null codons do not. Thus the deep calls stay
+  in the output. Find them by `expected`, and look at their `shoulder` before
+  you use one alone. For one start the shoulder is noisy: 25-29% of the
+  annotated starts with 3 or more expected reads have a shoulder of 0 or less
+  (median 0.9-1.2), and more than half of the null-codon peaks that reach the
+  $p$ of a call (median -0.7 to -0.1).
 - **Trailers.** Harringtonine libraries can hold RNA fragments that the
   elongation libraries do not have, mostly in trailers and of short reads.
   `starts_stats.tsv` gives many expected false calls in trailers; use those

@@ -38,6 +38,10 @@ a start with q < fdr (FDR) is called if no called start stops it, and it stops t
 and in its codons 1-10 (harringtonine raises them). Each called start gives an ORF to its first
 in-frame stop, typed against the annotated CDS. The catalogue is the uORFs and uoORFs of the called
 starts and every annotated CDS.
+
+The shoulder of a candidate (a flag, not part of the test): log2 harringtonine / elongation P-sites in its codons
+1-5, minus the same in the 5 codons before its window. Harringtonine raises the codons 1-5 of a used start; most
+peaks at codons that cannot start (null codons) have no shoulder.
 """
 import logging
 from dataclasses import dataclass
@@ -56,6 +60,8 @@ CLASSES = REGIONS + ("annotated",)   # BH classes: the annotated starts, the oth
 START_CODONS = ("ATG", "CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATA", "ATC", "ATT")
 WIN = (-1, 3)        # a start's window: nt from its first nt, the start codon and the nt before it
 RAISED = (-3, 33)    # an annotated start's window and its codons 1-10: harringtonine raises them
+SHOULDER = (3, 18)   # a start's codons 1-5, and the 5 codons before its window: the shoulder
+BEFORE = (-18, -3)
 NEAR = (-8, 8)       # a null codon has no start codon this near: their windows would overlap
 PROFILE = (-15, 63)  # nt from the annotated start: the kernel to codon 10, then codons 11-20 scale the elongation
 KERNEL_END = 33
@@ -194,6 +200,16 @@ def window_sums(x, pos, win=WIN):
     """Sum of x over [pos + win[0], pos + win[1])."""
     c = np.r_[0, np.cumsum(x)]
     return c[pos + win[1]] - c[pos + win[0]]
+
+
+def shoulder(pools, pos):
+    """Per start at pos: log2 (harringtonine + 1) / (elongation + 1) P-sites in its codons 1-5 (SHOULDER), minus the
+    same in the 5 codons before its window (BEFORE). The reads of the pools add, without factors: a local contrast."""
+    def log_ratio(win):
+        h = sum(window_sums(pl.h, pos, win) for pl in pools)
+        e = sum(window_sums(pl.e, pos, win) for pl in pools)
+        return np.log2((h + 1) / (e + 1))
+    return log_ratio(SHOULDER) - log_ratio(BEFORE)
 
 
 def bin_index(region, dist):
@@ -595,6 +611,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         "enrichment": h / np.maximum(m, 1e-300), "p": p, "typical_p": typical_p,
         "multimapped": sum(window_sums(pl.multi, pos) for pl in pools.values())
         / np.maximum(sum(window_sums(pl.h, pos) + window_sums(pl.e, pos) for pl in pools.values()), 1),
+        "shoulder": shoulder(pools.values(), pos),
     })
     q_all = class_q(p)
     out["q"] = q_all
@@ -609,7 +626,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
                        f"q<{fdr:g} {CLASSES[c]}": int((q < fdr).sum()), f"null_rate_at_cut {CLASSES[c]}": rate,
                        f"expected_false {CLASSES[c]}": rate * n_tests[c]})
     cols = ["Name", "start", "codon", "region", "frame", "ORF_id", "harringtonine", "elongation", "expected",
-            "enrichment", "p", "typical_p", "q", "multimapped"]
+            "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
     if scan:
         called, stopped_by = near_starts(pos, p, out["q"].to_numpy() < fdr, np.flatnonzero(cls == 4))
         stop = next_stops(layout)[pos + 3]
@@ -621,7 +638,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         out["type"] = np.where(has_stop, orf_types(nt, end, layout.cds_start[t], layout.cds_end[t]), "no stop")
         cols += ["called", "stopped_by", "end", "type"]
         orf_cols = ["ORF_id", "Name", "start", "end", "type", "start_codon", "harringtonine", "elongation",
-                    "expected", "enrichment", "p", "q"]
+                    "expected", "enrichment", "p", "q", "shoulder"]
         typ = out["type"].to_numpy()
         orfs_out = out[called & has_stop & (typ != "CDS")].rename(columns={"codon": "start_codon"})[orf_cols]
         # the catalogue: the uORFs and uoORFs of the called starts, and every annotated CDS (end: the annotation's)
