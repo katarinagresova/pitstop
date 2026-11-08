@@ -42,6 +42,11 @@ reads](workflows/reads.md) covers the trimming, the contaminants, and the
 alignment with STAR or bowtie. To count ORFs from an ORF caller or from genome
 coordinates: [ORF tables from other tools](workflows/orf-tables.md).
 
+Before the first command, `pitstop inspect` checks each library and names the
+read lengths that keep their reading frame, for `--read-lengths`. If it finds
+extra nucleotides at the 5' end of the reads, `pitstop repair` clips them and
+writes a new BAM for the other commands.
+
 ## Why
 
 Ribo-seq quantification needs the isoform-length term accounted for, a fit
