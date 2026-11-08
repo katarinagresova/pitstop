@@ -10,8 +10,14 @@ Every command reads transcriptome alignments and writes tab-separated tables,
 pip install git+https://github.com/katarinagresova/pitstop.git
 ```
 
-pitstop needs Python 3.10 or later, with numpy, scipy, pandas and pysam. To
-run the tests, or to use the exact versions they ran with, use the conda
+pitstop needs Python 3.10 or later, with numpy, scipy, pandas and pysam. The
+QC figures of `pitstop plot` also need matplotlib:
+
+```bash
+pip install "pitstop[plot] @ git+https://github.com/katarinagresova/pitstop.git"
+```
+
+To run the tests, or to use the exact versions they ran with, use the conda
 environment instead:
 
 ```bash
@@ -19,7 +25,7 @@ git clone https://github.com/katarinagresova/pitstop.git
 cd pitstop
 mamba env create -p .env -f environment.yml
 .env/bin/pip install --no-deps -e .
-.env/bin/python -m pytest          # 46 tests on synthetic data with known truth
+.env/bin/python -m pytest          # 52 tests on synthetic data with known truth
 ```
 
 ## Counts per CDS: `quant`
@@ -93,8 +99,8 @@ which both have, is not taken for a start. It reads the outputs of
 `pitstop orfs` runs:
 
 ```bash
-# one offset table per pool: quant on the merged harringtonine BAMs
-pitstop quant --bam harr_merged.bam --gtf annotation.gtf --fasta genome.fa \
+# one offset table per pool: quant on the merged elongation BAMs
+pitstop quant --bam elong_merged.bam --gtf annotation.gtf --fasta genome.fa \
     --read-lengths 18-30 --out-prefix out/pool
 # orfs on every library, harringtonine and elongation, with that table
 pitstop orfs --bam harr_rep1.bam --gtf annotation.gtf --fasta genome.fa \
@@ -112,13 +118,43 @@ TTG, AAG, ACG, AGG, ATA, ATC, ATT) with harringtonine reads, and calls the
 starts with BH q < 0.05; `--start-codons ATG,CTG` tests only these codons and
 `--fdr 0.01` sets the cut. `--orfs table.tsv` tests the starts of an ORF
 table instead (columns `ORF_id Name start`). The annotated starts are always
-tested. How it works and how to read it: [Start sites](starts.md).
+tested. Only the start lengths count: by default the read lengths that pass a
+QC in 24-34 nt (`--length-window`), or those of `--start-lengths LO-HI`. How
+it works and how to read it: [Start sites](starts.md).
 
 | Output | Content |
 |---|---|
 | `<prefix>.starts.tsv` | one row per tested start: `Name start codon region frame ORF_id harringtonine elongation expected enrichment p typical_p q multimapped shoulder`. `harringtonine` and `elongation` are the P-sites in the start's window (nt -1 to +2 of the start codon), summed over the replicates and pools; `expected` is the harringtonine P-sites that the elongation profile predicts there; `q` is BH per class (annotated starts; other starts per region: leader, CDS, trailer, transcript without a CDS); `typical_p` is the p the window would have with the reads of a typical used start; `multimapped` is the share of the window's reads with another alignment; `shoulder` is log2 harringtonine / elongation P-sites (+1 each) in the codons 1-5 after the start, minus the same in the 5 codons before its window (a used start raises its codons 1-5; not part of the test). With `--scan` also `called stopped_by end type`. |
 | `<prefix>.start_orfs.tsv` | with `--scan`: the ORF of each called start, to its first in-frame stop, but the annotated CDSs: `ORF_id Name start end type start_codon` and the start evidence. `ORF_id` is `<transcript>_<1-based start>`. `type` is `uORF`, `uoORF`, `extension` (in frame upstream of the CDS), `truncation` (in frame inside it), `internal` (out of frame inside it), `dORF` (after it) or `other` (no annotated CDS). An ORF table for `pitstop orfs --orfs`. |
 | `<prefix>.catalogue.tsv` | with `--scan`: the uORFs and uoORFs of the called starts, and every annotated CDS with its start evidence; the columns of `start_orfs.tsv`. An ORF table for `pitstop orfs --orfs`. |
-| `<prefix>.kernel.tsv` | per pool, read length and nt from the annotated start (-15 to +32): harringtonine and elongation P-sites, and the kernel (harringtonine minus scaled elongation, as a share). |
+| `<prefix>.lengths.tsv` | the QC of the read lengths, per library and read length: `library pool kind length psites share leader CDS trailer transcript frame0 frame1 frame2 top_frame periodic start_peak at_peak calibrated shift qc start_length`. `psites` are its P-sites, `share` their share of the library's, `leader`-`transcript` the same per region; `frame0-2` are its P-sites per CDS frame, 15 nt or more inside the CDSs, and `top_frame` the share of the top frame; `periodic`: 100 of these P-sites or more and `top_frame` 0.4 or more. `start_peak` is the nt (-15 to +32 from the annotated starts) where its P-sites peak, `at_peak` their number there; `shift` is the nt its P-sites move. `qc` is the verdict on the length, `pass` or why not ([start lengths](starts.md#1-calibration-and-start-lengths)). It is written before the test, also when no length passes. |
+| `<prefix>.profiles.tsv` | the profiles behind `lengths.tsv`, per library and read length, from the pool's offsets, before the calibration: `library length anchor x frame psites`. `anchor` `start`: P-sites at nt `x` (-15 to +62) from the annotated starts; `stop`: at nt `x` (-45 to +14) from the first nt of the stop codons; `cds`: in bin `x` of 20 along the CDSs. `frame` is the frame of the CDS. For `pitstop plot`. |
+| `<prefix>.kernel.tsv` | per pool, read length and nt from the annotated start (-15 to +32): harringtonine and elongation P-sites (after the calibration), and the kernel (harringtonine minus scaled elongation, as a share). |
 | `<prefix>.factors.tsv` | per pool: the harringtonine / elongation factor of each bin of region and distance. |
-| `<prefix>.starts_stats.tsv` | the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. With `--scan`, the overdispersion is the second one, and `null_windows_near_called` is the number of null windows dropped near the starts of the first call. |
+| `<prefix>.starts_stats.tsv` | the length window, the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. With `--scan`, the overdispersion is the second one, and `null_windows_near_called` is the number of null windows dropped near the starts of the first call. |
+
+## QC figures: `plot`
+
+`pitstop plot` draws the read-length QC of a `starts` run, from its
+`lengths.tsv` and `profiles.tsv`. It needs matplotlib (`pitstop[plot]`, see
+[Install](#install)).
+
+```bash
+pitstop plot --prefix out/starts      # writes out/starts.lengths.pdf
+```
+
+- **Page 1**, a row per library: its P-sites per read length (the start
+  lengths dark, the length window shaded), and the start-length P-sites by
+  region (leader, CDS, trailer, transcripts without a CDS) and by frame inside
+  the CDSs.
+- **A page per library**, a row per read length: the frame of its P-sites
+  inside the CDSs, its P-sites around the annotated starts and the stop
+  codons per nt, and along the CDSs (5' to 3', per frame). Bars and lines are
+  coloured by the frame of the CDS. The label says the share of the library's
+  P-sites, the calibration's move, and why a length is not a start length.
+
+What to look for: a start length has most of its P-sites in frame 0, a peak at
+nt 0 of the annotated starts (after its move), and in an elongation library a
+peak 3 nt before the stop codon. In a harringtonine library, the profile along
+the CDS climbs from the 5' end (the ribosomes there ran off) and the stop peak
+is low.

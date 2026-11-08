@@ -440,9 +440,10 @@ def start_profiles(txs, orfs, pauses):
     return out
 
 
-def make_start_dataset(directory, seed=5, replicates=2):
+def make_start_dataset(directory, seed=5, replicates=2, harr_offsets=None):
     """Reference, ORF table (the ORFs but the CDSs) and per replicate an elongation and a harringtonine BAM
-    (libs[(kind, rep)])."""
+    (libs[(kind, rep)]). harr_offsets: {length: [(offset, probability)]} for the harringtonine libraries in place
+    of PLANTED's (another digestion: e.g. most 5' ends 1 nt longer)."""
     rng = np.random.default_rng(seed)
     txs, orfs, pauses = build_start_transcripts(rng)
     genome, pos = [], 0
@@ -455,12 +456,13 @@ def make_start_dataset(directory, seed=5, replicates=2):
     libs = {}
     for rep in range(1, replicates + 1):
         for k, kind in enumerate(("elongation", "harringtonine")):
+            offsets = {**PLANTED, **(harr_offsets or {})} if kind == "harringtonine" else PLANTED
             reads = []
             for name, tx in txs.items():
                 seq = tx["seq"]
                 for p in np.repeat(np.arange(len(seq)), rng.poisson(prof[name][k])):
                     length = int(rng.choice(list(PLANTED)))
-                    ds, ps = zip(*PLANTED[length])
+                    ds, ps = zip(*offsets[length])
                     pos5 = p - int(rng.choice(ds, p=ps))
                     if 0 <= pos5 <= len(seq) - length:
                         reads.append((f"{kind}{rep}_{len(reads)}_x1", seq[pos5:pos5 + length], f"{length}M",

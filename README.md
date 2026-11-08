@@ -48,6 +48,9 @@ straight into your analysis.
 pip install git+https://github.com/katarinagresova/pitstop.git
 ```
 
+For the QC figures of `pitstop plot`, add matplotlib:
+`pip install "pitstop[plot] @ git+https://github.com/katarinagresova/pitstop.git"`.
+
 pitstop needs Python 3.10 or later.
 
 ## Quick start

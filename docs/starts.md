@@ -52,13 +52,18 @@ their evidence adds up.
 
 The libraries of a pool must have the same P-site offsets, or their P-sites
 are not comparable. Give each `orfs` run of a pool the offsets of
-`pitstop quant` on the pool's harringtonine BAMs, merged into one
-(`--offsets`). The libraries also need the same transcripts: give them the
-same GTF. Transcripts that are not in every `orfs` run are left out.
+`pitstop quant` on the pool's elongation BAMs, merged into one
+(`--offsets`). Not the harringtonine BAMs: `quant` places the offsets with
+the reads at both ends of the CDSs, and after the run-off a harringtonine
+library has few reads at the stop codons. Its offsets can then be a codon
+too long. `starts` then moves each library's read lengths by the 1-2 nt
+that its own digestion needs ([calibration](#1-calibration-and-start-lengths)).
+The libraries also need the same transcripts: give them the same GTF.
+Transcripts that are not in every `orfs` run are left out.
 
 ```bash
-samtools cat -o harr_control.bam harr_control_rep1.bam harr_control_rep2.bam
-pitstop quant --bam harr_control.bam --gtf annotation.gtf --fasta genome.fa \
+samtools cat -o elong_control.bam elong_control_rep1.bam elong_control_rep2.bam
+pitstop quant --bam elong_control.bam --gtf annotation.gtf --fasta genome.fa \
     --read-lengths 18-30 --out-prefix out/control
 for lib in harr_control_rep1 harr_control_rep2 elong_control_rep1 elong_control_rep2; do
     pitstop orfs --bam $lib.bam --gtf annotation.gtf --fasta genome.fa \
@@ -71,14 +76,53 @@ pitstop starts --libraries libraries.tsv --gtf annotation.gtf --fasta genome.fa 
 
 ## Method
 
-### 1. Start lengths and the kernel
+### 1. Calibration and start lengths
 
-For each read length, `starts` counts the harringtonine P-sites around the
-annotated start codons. The **start lengths** are the longest run of
-consecutive lengths whose P-sites peak on the first nt of the start codon in
-every harringtonine library (`--start-lengths` sets them). Only their P-sites
-count, one per alignment, in both kinds of library. Shorter and longer reads
-often peak 1-3 nt away, because their offsets do not fit the start.
+One offset table serves every library of a pool, but the libraries are not
+digested alike. In a harringtonine library, most 5' ends of a read length can
+be 1 nt longer than in the elongation library. Its P-sites then sit 1 nt
+before the codon: at the start codon and at every pause. `starts` therefore
+calibrates each library, per read length, with two anchors:
+
+- the **start peak**: the nt (-15 to +32) where its P-sites peak around the
+  annotated start codons;
+- the **frame**: the frame of the CDS that holds most of its P-sites well
+  inside the CDSs (15 nt or more from both ends).
+
+A length is **calibrated** when its start peak is 2 nt or less from nt 0
+(with 20 P-sites or more at the peak), and the frame does not clearly put
+the P-sites elsewhere. "Clearly" means at least 100 P-sites inside the CDSs,
+and a dominant frame with 1.5 times the P-sites of the frame that the move
+puts onto the codon. Its P-sites then move by minus the start peak. The two
+anchors need each other: the frame cannot tell a codon (a peak at -1 and a
+peak at +2 are both frame 2), and a start peak alone could be a property of
+the start only, not of every P-site of the length. A length that is not
+calibrated moves by its frame if that is clear, else it stays.
+
+The **start lengths** come from a QC of each read length in each library. A
+start length:
+
+- is in the **window**, 24-34 nt by default (`--length-window`). An 80S
+  ribosome protects about 28 nt; shorter reads are mostly RNA fragments and
+  other ribosome states, with a weak frame and harringtonine peaks that the
+  elongation libraries do not have;
+- is calibrated in every harringtonine library;
+- has a **clear frame** in every library: 100 P-sites or more well inside the
+  CDSs, and 40% or more of them in one frame (a third is no frame).
+
+Of the runs of consecutive lengths that pass, the run with the most P-sites
+wins. `--start-lengths` sets the start lengths instead. Only their P-sites
+count, one per alignment, in both kinds of library.
+
+`lengths.tsv` has the QC, per library and length: the P-sites (all, their
+share of the library's, and per region), the P-sites per frame inside the
+CDSs, the start peak, whether the length is calibrated, its move, and the
+verdict (`pass`, or why not). `profiles.tsv` has the profiles behind it: per
+library and length, the P-sites around the annotated starts and stop codons
+and along the CDSs, from the pool's offsets, before the calibration.
+`pitstop plot` draws both ([Usage](usage.md#qc-figures-plot)). Look at it
+before you trust the start lengths: a length that the calibration moves peaks
+at -1 or +1 in its library's profile, and its row says by how much.
 
 The **kernel** is the shape of a start: per length, the harringtonine P-sites
 minus the elongation P-sites (scaled on codons 11-20), as a share of nt -15

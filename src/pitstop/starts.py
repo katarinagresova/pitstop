@@ -9,9 +9,19 @@ the next transcript. Each position has a region: leader, CDS, trailer (the stop 
 transcript (no annotated CDS), and a distance in the region: nt to the CDS start in the leader, codons
 from the CDS start in the CDS, nt from the stop codon in the trailer, nt from the 5' end in a transcript.
 
-Start lengths. Per read length, the P-sites around the annotated starts. The start lengths are the
-longest run of lengths whose harringtonine P-sites peak at nt 0 of the start codon in each library.
-Only their P-sites count, one per alignment.
+Calibration and start lengths. A library can put the P-sites of a read length 1-2 nt off: its nuclease can
+leave most 5' ends 1 nt longer than the pool's offsets expect (an initiation library's digestion is not the
+elongation library's). Per library and read length: the start anchor is the peak of the P-sites at the
+annotated starts (nt -15..32); the frame is the dominant frame of the P-sites well inside the CDSs. The length
+is calibrated when its start peak is within MAX_SHIFT nt of nt 0 (with MIN_ANCHOR P-sites or more) and the
+frame does not clearly put the P-sites elsewhere (FRAME_GUARD); its P-sites then move by minus the peak. The
+frame alone cannot tell a codon (-1 and +2 are both frame 2), the start peak can. A length that is not
+calibrated moves by its frame if that is clear, else stays. The start lengths come from a QC of each read length
+in each library: in WINDOW (an 80S footprint is about 28 nt; the window keeps out short RNA fragments), calibrated
+in every harringtonine library, and periodic in every library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of
+them in the top frame); of the runs of consecutive such lengths, the one with the most P-sites. Only their P-sites
+count, one per alignment. <prefix>.lengths.tsv has the QC, <prefix>.profiles.tsv the profiles behind it (P-sites
+from the pool's offsets, before the calibration) for `pitstop plot`.
 
 Background, per pool. The harringtonine / elongation ratio depends on the region, and in the CDS on
 the distance from the start (run-off). h = s_t f_b e: a factor per bin of region and distance (BINS),
@@ -65,6 +75,18 @@ BEFORE = (-18, -3)
 NEAR = (-8, 8)       # a null codon has no start codon this near: their windows would overlap
 PROFILE = (-15, 63)  # nt from the annotated start: the kernel to codon 10, then codons 11-20 scale the elongation
 KERNEL_END = 33
+MAX_SHIFT = 2        # calibration: a start peak this many nt or fewer from nt 0 can be moved onto it
+MIN_ANCHOR = 20      # calibration: P-sites at the start peak, summed over the annotated starts
+INTERIOR = 15        # the frame: P-sites at least this many nt inside the CDS at both ends (as orfs.INTERIOR)
+MIN_FRAME = 100      # the frame decides (guard, fallback) only with this many P-sites inside the CDSs
+FRAME_GUARD = 1.5    # the frame is clear when its dominant frame has this many times the P-sites of the other
+WINDOW = (24, 34)    # start lengths: an 80S footprint is about 28 nt; the window keeps out short RNA fragments
+MIN_TOP = 0.4        # start lengths: the top frame has this share of a length's CDS-interior P-sites or more
+STOP_PROFILE = (-45, 15)   # QC profiles: nt from the first nt of the stop codon (codons -15..4)
+CDS_BINS = 20        # QC profiles: bins along the CDS
+LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "leader", "CDS", "trailer", "transcript",
+                  "frame0", "frame1", "frame2", "top_frame", "periodic", "start_peak", "at_peak", "calibrated", "shift",
+                  "qc", "start_length"]
 STRIDE = WIN[1] - WIN[0]   # one null codon per window width for the null windows: they do not overlap
 FDR = 0.05           # the BH cut of a call
 MAX_MULTI = 0.5      # null windows: multimapped share of the window's reads below this
@@ -263,24 +285,143 @@ def nb_sf(h, mean, size):
     return out
 
 
-def profile(pos, length, tx, cs_flat, lengths):
-    """P-sites per (read length in [lo, hi], nt from the annotated start in PROFILE)."""
+def profile(pos, length, tx, anchor, lengths, window=PROFILE):
+    """P-sites per (read length in [lo, hi], nt from the anchor of their transcript in window). anchor: a flat
+    position per transcript (-1: none), e.g. its annotated start."""
     lo, hi = lengths
     t = tx[pos]
-    c = cs_flat[np.maximum(t, 0)]
+    c = anchor[np.maximum(t, 0)]
     d = pos - c
-    k = (t >= 0) & (c >= 0) & (d >= PROFILE[0]) & (d < PROFILE[1]) & (length >= lo) & (length <= hi)
-    n = PROFILE[1] - PROFILE[0]
-    return np.bincount((length[k] - lo) * n + d[k] - PROFILE[0], minlength=(hi - lo + 1) * n).reshape(-1, n)
+    k = (t >= 0) & (c >= 0) & (d >= window[0]) & (d < window[1]) & (length >= lo) & (length <= hi)
+    n = window[1] - window[0]
+    return np.bincount((length[k] - lo) * n + d[k] - window[0], minlength=(hi - lo + 1) * n).reshape(-1, n)
 
 
-def choose_start_lengths(peaks):
-    """The longest run of consecutive lengths that peak at nt 0 in every library (peaks: length x library)."""
-    best, cur = [], []
-    for length, row in peaks.iterrows():
-        cur = cur + [int(length)] if (row == 0).all() else []
-        best = cur if len(cur) > len(best) else best
-    return best
+def region_counts(pos, length, region, lengths):
+    """P-sites per (read length in [lo, hi], region: leader, CDS, trailer, transcript)."""
+    lo, hi = lengths
+    r = region[pos]
+    k = (r >= 0) & (length >= lo) & (length <= hi)
+    return np.bincount((length[k] - lo) * 4 + r[k], minlength=(hi - lo + 1) * 4).reshape(-1, 4)
+
+
+def cds_bins(pos, length, tx, layout, lengths):
+    """P-sites per (read length in [lo, hi], bin of CDS_BINS along the annotated CDS, frame of the CDS)."""
+    lo, hi = lengths
+    t = np.maximum(tx[pos], 0)
+    cs, ce = layout.cds_start[t], layout.cds_end[t]
+    x = pos - layout.first[t] - cs
+    k = (tx[pos] >= 0) & (cs >= 0) & (x >= 0) & (x < ce - cs) & (length >= lo) & (length <= hi)
+    b = x[k] * CDS_BINS // (ce - cs)[k]
+    return np.bincount(((length[k] - lo) * CDS_BINS + b) * 3 + x[k] % 3,
+                       minlength=(hi - lo + 1) * CDS_BINS * 3).reshape(-1, CDS_BINS, 3)
+
+
+def interior_frames(pos, length, tx, layout, lengths):
+    """P-sites per (read length in [lo, hi], frame of the annotated CDS) at least INTERIOR nt inside the CDS at both
+    ends: no start or stop peaks."""
+    lo, hi = lengths
+    t = np.maximum(tx[pos], 0)
+    cs, ce = layout.cds_start[t], layout.cds_end[t]
+    x = pos - layout.first[t]
+    k = (tx[pos] >= 0) & (cs >= 0) & (x >= cs + INTERIOR) & (x < ce - INTERIOR) & (length >= lo) & (length <= hi)
+    return np.bincount((length[k] - lo) * 3 + (x[k] - cs[k]) % 3, minlength=(hi - lo + 1) * 3).reshape(-1, 3)
+
+
+def calibrate(prof, frames, lengths):
+    """Per read length of one library (prof: P-sites at nt PROFILE from the annotated starts; frames: interior P-sites
+    per CDS frame): the start peak, the frames, whether the length is calibrated, and its shift (the P-sites move by
+    it). Calibrated: the start peak is within MAX_SHIFT nt of nt 0, has MIN_ANCHOR P-sites or more, and the frame is
+    not clearly against it (the dominant frame, with MIN_FRAME interior P-sites or more, has FRAME_GUARD times the
+    P-sites of the frame that the shift moves onto frame 0). Shift: minus the peak; for a length that is not
+    calibrated, the shift that moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), else 0."""
+    n = np.arange(len(prof))
+    peak = np.argmax(prof[:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
+    at_peak = prof[n, peak - PROFILE[0]]
+    total = frames.sum(axis=1)
+    dominant = frames.argmax(axis=1)
+    against = (total >= MIN_FRAME) & (dominant != peak % 3) & (frames[n, dominant] >= FRAME_GUARD * frames[n, peak % 3])
+    calibrated = (np.abs(peak) <= MAX_SHIFT) & (at_peak >= MIN_ANCHOR) & ~against
+    top2 = np.sort(frames, axis=1)[:, -2:]
+    clear = (total >= MIN_FRAME) & (top2[:, 1] >= FRAME_GUARD * top2[:, 0])
+    shift = np.where(calibrated, -peak, np.where(clear, np.array([0, -1, 1])[dominant], 0))
+    return pd.DataFrame({"length": np.arange(lengths[0], lengths[1] + 1), "start_peak": peak, "at_peak": at_peak,
+                         "frame0": frames[:, 0], "frame1": frames[:, 1], "frame2": frames[:, 2],
+                         "calibrated": calibrated, "shift": shift})
+
+
+def length_qc(prof, frames, regions, lengths):
+    """Per read length of one library: calibrate()'s columns, the P-sites (all, their share of the library's, and per
+    region), the top frame's share of the CDS-interior P-sites, and whether the length is periodic (MIN_FRAME
+    interior P-sites or more, MIN_TOP of them in the top frame)."""
+    out = calibrate(prof, frames, lengths)
+    psites = regions.sum(axis=1)
+    interior = frames.sum(axis=1)
+    top = frames.max(axis=1) / np.maximum(interior, 1)
+    out["psites"] = psites
+    out["share"] = psites / max(psites.sum(), 1)
+    for i, r in enumerate(REGIONS):
+        out[r] = regions[:, i]
+    out["top_frame"] = top
+    out["periodic"] = (interior >= MIN_FRAME) & (top >= MIN_TOP)
+    return out
+
+
+def choose_start_lengths(table, window):
+    """The QC verdict per read length ("pass", or why not) and the start lengths. table: length_qc's rows of every
+    library, with kind. A start length is in the window, calibrated in every harringtonine library and periodic in
+    every library; of the runs of consecutive such lengths, the one with the most P-sites (the first if tied)."""
+    harr = table["kind"] == "harringtonine"
+    n_harr, n_lib = table.loc[harr, "library"].nunique(), table["library"].nunique()
+    uncal = (~table.loc[harr, "calibrated"]).groupby(table.loc[harr, "length"]).sum()
+    aperiodic = (~table["periodic"]).groupby(table["length"]).sum()
+    reads = table.groupby("length")["psites"].sum()
+    why = {}
+    for length in reads.index:
+        r = []
+        if not window[0] <= length <= window[1]:
+            r.append(f"outside the window {window[0]}-{window[1]}")
+        if uncal.get(length, 0):
+            r.append(f"not calibrated in {uncal[length]} of {n_harr} harringtonine libraries")
+        if aperiodic[length]:
+            r.append(f"no clear frame in {aperiodic[length]} of {n_lib} libraries")
+        why[int(length)] = "; ".join(r)
+    runs = []
+    for length in (x for x in why if not why[x]):
+        if runs and runs[-1][-1] == length - 1:
+            runs[-1].append(length)
+        else:
+            runs.append([length])
+    best = max(runs, key=lambda run: reads[run].sum()) if runs else []
+    for length in (x for x in why if not why[x]):
+        why[length] = "pass" if length in best else f"outside the run {best[0]}-{best[-1]}"
+    return pd.Series(why), best
+
+
+def qc_profiles(start, stop, cds, lo):
+    """One library's profiles as a long table: P-sites per read length at nt x from the annotated starts (anchor
+    start) and from the first nt of the stop codons (stop), and per bin x along the CDSs (cds); frame: of the CDS."""
+    rows = []
+    for anchor, arr, x0 in (("start", start, PROFILE[0]), ("stop", stop, STOP_PROFILE[0])):
+        n_len, n = arr.shape
+        x = np.tile(np.arange(x0, x0 + n), n_len)
+        rows.append(pd.DataFrame({"length": np.repeat(np.arange(lo, lo + n_len), n), "anchor": anchor, "x": x,
+                                  "frame": x % 3, "psites": arr.ravel()}))
+    n_len = cds.shape[0]
+    rows.append(pd.DataFrame({"length": np.repeat(np.arange(lo, lo + n_len), CDS_BINS * 3), "anchor": "cds",
+                              "x": np.tile(np.repeat(np.arange(CDS_BINS), 3), n_len),
+                              "frame": np.tile(np.arange(3), n_len * CDS_BINS), "psites": cds.ravel()}))
+    return pd.concat(rows, ignore_index=True)
+
+
+def shift_psites(psites, shift, lo, tx):
+    """P-sites (flat positions, lengths, multimapper flags) moved by the shift of their length (shift[length - lo]);
+    those that leave their transcript are dropped."""
+    pos, length, multi = psites
+    new = pos + shift[length - lo]
+    k = (new >= 0) & (new < len(tx))
+    k[k] = tx[new[k]] == tx[pos[k]]
+    return new[k], length[k], multi[k]
 
 
 def kernel(hp, ep):
@@ -469,11 +610,11 @@ def near_starts(pos, p, passing, annotated=()):
 
 
 def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_lengths=None, start_codons=None,
-        fdr=FDR):
+        fdr=FDR, window=WINDOW):
     """Start evidence from the `pitstop orfs` runs of a library sheet (TSV pool, harringtonine, elongation:
     out prefixes, one row per replicate), for the starts of an ORF table and the annotated starts, or for every
     start codon (of `start_codons`, default START_CODONS) with harringtonine reads (scan: also the starts called
-    at q < fdr and their ORFs)."""
+    at q < fdr and their ORFs). start_lengths (lo, hi): the read lengths that count; default: the QC's, in `window`."""
     if (orfs_path is None) == (not scan):
         raise ValueError("give an ORF table or scan, not both")
     if start_codons is not None and not scan:
@@ -502,18 +643,41 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     psites = {p: read_psites(p, layout, (0, np.iinfo(np.int16).max)) for p in prefixes}
     lo = min(int(x[1].min()) for x in psites.values())
     hi = max(int(x[1].max()) for x in psites.values())
-    prof = {p: profile(pos, length, tx, cs_flat, (lo, hi)) for p, (pos, length, _) in psites.items()}
-    peaks = pd.DataFrame({p: np.argmax(prof[p][:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
-                          for p in sheet["harringtonine"]}, index=range(lo, hi + 1))
-    if start_lengths is None:
-        start_lengths = choose_start_lengths(peaks)
-        if not start_lengths:
-            raise ValueError("no read length peaks at nt 0 of the annotated starts in every harringtonine "
-                             "library; choose them with --start-lengths")
-    else:
-        start_lengths = list(range(start_lengths[0], start_lengths[1] + 1))
+    role, pool_of = {}, {}
+    for kind in ("harringtonine", "elongation"):
+        for p, pool in zip(sheet[kind], sheet["pool"]):
+            role.setdefault(p, kind)
+            pool_of.setdefault(p, pool)
+    ce_flat = np.full(n_tx, -1, dtype=np.int64)
+    has = layout.cds_start >= 0
+    ce_flat[has] = layout.first[has] + layout.cds_end[has]
+    qc, profiles = [], []
+    for p, (pos, length, _) in psites.items():
+        start = profile(pos, length, tx, cs_flat, (lo, hi))
+        qc.append(length_qc(start, interior_frames(pos, length, tx, layout, (lo, hi)),
+                            region_counts(pos, length, region, (lo, hi)), (lo, hi))
+                  .assign(library=p, pool=pool_of[p], kind=role[p]))
+        profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
+                                    cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
+    table = pd.concat(qc, ignore_index=True)
+    verdict, chosen = choose_start_lengths(table, window)
+    start_lengths = chosen if start_lengths is None else list(range(start_lengths[0], start_lengths[1] + 1))
+    table["qc"] = table["length"].map(verdict)
+    table["start_length"] = table["length"].isin(start_lengths)
+    table[LENGTH_COLUMNS].to_csv(f"{out_prefix}.lengths.tsv", sep="\t", index=False)
+    pd.concat(profiles, ignore_index=True)[["library", "length", "anchor", "x", "frame", "psites"]].to_csv(
+        f"{out_prefix}.profiles.tsv", sep="\t", index=False)
+    del profiles
+    if not start_lengths:
+        raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated in every "
+                         f"harringtonine library, a clear frame in every library): see {out_prefix}.lengths.tsv, "
+                         "or choose them with --start-lengths")
+    st["length_window"] = f"{window[0]}-{window[1]}"
     st["start_lengths"] = ",".join(map(str, start_lengths))
     log.info("start lengths: %s", start_lengths)
+    shift = {p: g["shift"].to_numpy() for p, g in table.groupby("library", sort=False)}
+    psites = {p: shift_psites(x, shift[p], lo, tx) for p, x in psites.items()}
+    prof = {p: profile(pos, length, tx, cs_flat, (lo, hi)) for p, (pos, length, _) in psites.items()}
 
     kern_rows = []
     pools = {}

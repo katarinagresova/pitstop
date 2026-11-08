@@ -1,4 +1,5 @@
 import filecmp
+import re
 
 import numpy as np
 import pandas as pd
@@ -51,9 +52,55 @@ def test_fit_factors_recover_planted():
     assert f / f[1] == pytest.approx(f_true, rel=0.1)
 
 
-def test_start_lengths_longest_run():
-    peaks = pd.DataFrame({"a": [9, 0, 0, -3, 0, 0, 0], "b": [9, 0, 9, 0, 0, 0, -1]}, index=range(24, 31))
-    assert starts.choose_start_lengths(peaks) == [28, 29]
+def test_calibrate():
+    # per read length: P-sites at nt -15..62 of the annotated starts (a peak on a flat floor) and CDS-interior P-sites
+    # per frame. The start peak sets the shift; the frame only vetoes it when it is clearly elsewhere
+    def prof(peak, at=100):
+        r = np.ones(starts.PROFILE[1] - starts.PROFILE[0])
+        r[peak - starts.PROFILE[0]] = at
+        return r
+    cases = [  # (start peak, P-sites at it, frames) -> (calibrated, shift)
+        (0, 100, [900, 50, 50], True, 0),
+        (-1, 100, [300, 100, 600], True, 1),       # 5' ends 1 nt longer: frame 2 agrees
+        (2, 100, [100, 100, 800], True, -2),       # frame 2 too, but a codon later: the frame alone would say +1
+        (-3, 100, [900, 50, 50], False, 0),        # too far; the clear frame 0 keeps it in place
+        (0, 10, [100, 50, 850], False, 1),         # too few P-sites at the peak; the clear frame 2 moves it
+        (-1, 100, [800, 100, 100], False, 0),      # the frame is clearly against the peak
+        (-1, 100, [480, 40, 480], True, 1),        # frames 0 and 2 alike: no veto
+        (-1, 100, [5, 1, 60], True, 1)]            # too few interior P-sites for the frame to decide
+    c = starts.calibrate(np.array([prof(p, a) for p, a, *_ in cases]), np.array([f for _, _, f, *_ in cases]),
+                         (24, 24 + len(cases) - 1))
+    assert c["length"].tolist() == list(range(24, 24 + len(cases)))
+    assert c["calibrated"].tolist() == [x[3] for x in cases]
+    assert c["shift"].tolist() == [x[4] for x in cases]
+
+
+def test_choose_start_lengths():
+    # two libraries per length (a harringtonine and an elongation one): the window, calibration in the harringtonine
+    # library and a frame in both decide; of the passing runs, the one with the most P-sites
+    rows = []
+    for length, cal, per, reads in [(22, True, True, 900), (23, True, True, 10), (24, False, True, 10),
+                                    (25, True, True, 25), (26, True, True, 25), (27, True, False, 10),
+                                    (28, True, True, 20), (29, True, True, 20), (30, True, True, 20),
+                                    (35, True, True, 10)]:
+        for kind in ("harringtonine", "elongation"):
+            rows.append({"library": kind, "kind": kind, "length": length, "psites": reads,
+                         "calibrated": cal or kind == "elongation", "periodic": per})
+    why, best = starts.choose_start_lengths(pd.DataFrame(rows), (23, 34))
+    assert best == [28, 29, 30]          # 60 P-sites per library against 25-26's 50
+    assert why[22] == why[35] == "outside the window 23-34"
+    assert why[24] == "not calibrated in 1 of 1 harringtonine libraries"
+    assert why[27] == "no clear frame in 2 of 2 libraries"
+    assert why[23] == why[25] == why[26] == "outside the run 28-30" and why[28] == "pass"
+    assert starts.choose_start_lengths(pd.DataFrame(rows), (31, 34))[1] == []
+
+
+def test_shift_psites_stay_in_their_transcript():
+    tx = np.array([-1, 0, 0, 0, 0, -1, 1, 1, 1, -1])         # two transcripts and the gaps around them
+    pos, length = np.array([1, 2, 4, 7, 8]), np.array([28, 28, 29, 28, 29])
+    multi = np.array([False, True, False, True, False])
+    got = starts.shift_psites((pos, length, multi), np.array([-1, 1]), 28, tx)   # 28 nt: -1, 29 nt: +1
+    assert [g.tolist() for g in got] == [[1, 6], [28, 28], [True, True]]
 
 
 def test_orf_types():
@@ -96,13 +143,11 @@ def test_shoulder():
     assert np.allclose(starts.shoulder(pools, np.array([s])), np.log2(13 / 3) - np.log2(3 / 7))
 
 
-@pytest.fixture(scope="module")
-def started(tmp_path_factory):
-    # one offset table per pool, from `quant` on the merged harringtonine BAMs (as docs/starts.md advises)
-    d = tmp_path_factory.mktemp("startsynth")
-    data = make_start_dataset(d)
-    pysam.cat("-o", str(d / "harr.bam"), *[str(data["libs"]["harringtonine", r]) for r in (1, 2)])
-    quantify(str(d / "harr.bam"), str(data["gtf"]), str(data["fasta"]), WINDOW, str(d / "pool"))
+def pool_sheet(d, data):
+    """`orfs` on each library with one offset table per pool, from `quant` on the merged elongation BAMs (as
+    docs/starts.md advises); the library sheet of `starts`."""
+    pysam.cat("-o", str(d / "elong.bam"), *[str(data["libs"]["elongation", r]) for r in (1, 2)])
+    quantify(str(d / "elong.bam"), str(data["gtf"]), str(data["fasta"]), WINDOW, str(d / "pool"))
     rows = []
     for rep in (1, 2):
         for kind in ("harringtonine", "elongation"):
@@ -111,6 +156,14 @@ def started(tmp_path_factory):
         rows.append(("A", str(d / f"harringtonine{rep}"), str(d / f"elongation{rep}")))
     sheet = d / "sheet.tsv"
     pd.DataFrame(rows, columns=["pool", "harringtonine", "elongation"]).to_csv(sheet, sep="\t", index=False)
+    return sheet
+
+
+@pytest.fixture(scope="module")
+def started(tmp_path_factory):
+    d = tmp_path_factory.mktemp("startsynth")
+    data = make_start_dataset(d)
+    sheet = pool_sheet(d, data)
     out, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(d / "s"), str(data["orfs"]))
     scan, scan_st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(d / "scan"), scan=True)
     return dict(dir=d, data=data, sheet=sheet, out=out, stats=st, scan=scan, scan_stats=scan_st)
@@ -121,6 +174,49 @@ def test_start_lengths_from_kernel(started):
     k = pd.read_csv(started["dir"] / "s.kernel.tsv", sep="\t")
     peak = k.loc[k.groupby("length")["kernel"].idxmax(), "nt"]
     assert (peak == 0).all()
+    qc = pd.read_csv(started["dir"] / "s.lengths.tsv", sep="\t")
+    assert list(qc.columns) == starts.LENGTH_COLUMNS and len(qc) == 4 * 3
+    assert qc["calibrated"].all() and (qc["shift"] == 0).all() and qc["periodic"].all() and qc["start_length"].all()
+    assert (qc["qc"] == "pass").all() and (qc["pool"] == "A").all()
+    assert (qc["psites"] == qc[["leader", "CDS", "trailer", "transcript"]].sum(axis=1)).all()
+    assert np.allclose(qc.groupby("library")["share"].sum(), 1)
+    prof = pd.read_csv(started["dir"] / "s.profiles.tsv", sep="\t")
+    n = (starts.PROFILE[1] - starts.PROFILE[0]) + (starts.STOP_PROFILE[1] - starts.STOP_PROFILE[0]) + starts.CDS_BINS * 3
+    assert len(prof) == 4 * 3 * n
+    start = prof[prof["anchor"] == "start"].merge(qc, on=["library", "length"])
+    assert (start.loc[start["x"] == start["start_peak"], "psites_x"] == start.loc[start["x"] == start["start_peak"],
+                                                                                   "at_peak"]).all()
+    cds = prof[prof["anchor"] == "cds"].groupby(["library", "length"])["psites"].sum()
+    assert (cds - qc.set_index(["library", "length"])["CDS"]).eq(0).all()   # aligned on (library, length)
+
+
+@pytest.fixture(scope="module")
+def extended(tmp_path_factory):
+    # the harringtonine libraries leave most 30 nt 5' ends 1 nt longer (another digestion): with the pool's offsets
+    # (from the elongation libraries) their P-sites peak at nt -1 and sit in frame 2 inside the CDSs
+    d = tmp_path_factory.mktemp("extended")
+    data = make_start_dataset(d, harr_offsets={30: [(13, .6), (12, .25), (14, .15)]})
+    sheet = pool_sheet(d, data)
+    out, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(d / "s"), str(data["orfs"]))
+    return dict(dir=d, out=out, stats=st)
+
+
+def test_calibration_moves_a_shifted_length(extended):
+    # the 30 nt P-sites of the harringtonine libraries move by +1, nothing else moves; 30 nt stays a start length
+    # (the peak-at-nt-0 rule kept 28-29 only) and the calls are those of an unshifted set
+    cal = pd.read_csv(extended["dir"] / "s.lengths.tsv", sep="\t")
+    moved = (cal["kind"] == "harringtonine") & (cal["length"] == 30)
+    assert (cal.loc[moved, "start_peak"] == -1).all() and (cal.loc[moved, "shift"] == 1).all()
+    assert (cal.loc[moved, "frame2"] > cal.loc[moved, ["frame0", "frame1"]].max(axis=1)).all()
+    assert (cal.loc[~moved, "shift"] == 0).all() and cal["calibrated"].all()
+    assert extended["stats"]["start_lengths"] == "28,29,30"
+    k = pd.read_csv(extended["dir"] / "s.kernel.tsv", sep="\t")
+    assert (k.loc[k.groupby("length")["kernel"].idxmax(), "nt"] == 0).all()
+    out = extended["out"].set_index("ORF_id")
+    q = out["q"]
+    assert (out.loc[out.index.str.endswith(":CDS"), "q"] < 0.05).all()
+    assert sum(q[i] < 0.05 for i in PLANTED) >= 6
+    assert q["S6_pause"] > 0.05 and q["S7_quiet"] > 0.05
 
 
 def test_synthetic_calls(started):
@@ -146,12 +242,38 @@ def test_starts_cli_deterministic(started, tmp_path):
     data = started["data"]
     cli.main(["starts", "--libraries", str(started["sheet"]), "--gtf", str(data["gtf"]), "--fasta", str(data["fasta"]),
               "--orfs", str(data["orfs"]), "--out-prefix", str(tmp_path / "again")])
-    for f in ("starts", "kernel", "factors", "starts_stats"):
+    for f in ("starts", "lengths", "profiles", "kernel", "factors", "starts_stats"):
         assert filecmp.cmp(d / f"s.{f}.tsv", tmp_path / f"again.{f}.tsv", shallow=False), f
     cli.main(["starts", "--libraries", str(started["sheet"]), "--gtf", str(data["gtf"]), "--fasta", str(data["fasta"]),
               "--scan", "--out-prefix", str(tmp_path / "scan")])
     for f in ("starts", "start_orfs", "starts_stats"):
         assert filecmp.cmp(d / f"scan.{f}.tsv", tmp_path / f"scan.{f}.tsv", shallow=False), f
+
+
+def test_length_window(started, tmp_path):
+    # a window that holds no read length of the data: no start lengths, but lengths.tsv says why; --start-lengths
+    # still overrides the QC
+    data = started["data"]
+    args = ["starts", "--libraries", str(started["sheet"]), "--gtf", str(data["gtf"]), "--fasta", str(data["fasta"]),
+            "--orfs", str(data["orfs"])]
+    with pytest.raises(ValueError, match="no read length passes the QC"):
+        cli.main(args + ["--out-prefix", str(tmp_path / "w"), "--length-window", "31-34"])
+    qc = pd.read_csv(tmp_path / "w.lengths.tsv", sep="\t")
+    assert (qc["qc"] == "outside the window 31-34").all() and not qc["start_length"].any()
+    cli.main(args + ["--out-prefix", str(tmp_path / "g"), "--length-window", "31-34", "--start-lengths", "29-30"])
+    qc = pd.read_csv(tmp_path / "g.lengths.tsv", sep="\t")
+    assert qc.loc[qc["start_length"], "length"].unique().tolist() == [29, 30]
+    assert pd.read_csv(tmp_path / "g.starts_stats.tsv", sep="\t").set_index("stat").at["start_lengths", "value"] == "29,30"
+
+
+def test_plot(started, tmp_path):
+    pytest.importorskip("matplotlib")
+    from pitstop import plot
+    a = plot.run(str(started["dir"] / "s"), out=str(tmp_path / "a.pdf"))
+    b = plot.run(str(started["dir"] / "s"), out=str(tmp_path / "b.pdf"))
+    pdf = open(a, "rb").read()
+    assert pdf.startswith(b"%PDF") and len(re.findall(rb"/Type /Page\b(?!s)", pdf)) == 1 + 4   # overview + libraries
+    assert filecmp.cmp(a, b, shallow=False)     # no creation date: a rerun is byte-identical
 
 
 def test_scan_calls(started):

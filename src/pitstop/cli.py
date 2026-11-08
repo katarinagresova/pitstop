@@ -73,15 +73,25 @@ def main(argv=None):
                             "and write their ORFs (<prefix>.start_orfs.tsv) and the catalogue: their uORFs and uoORFs "
                             "and the annotated CDSs (<prefix>.catalogue.tsv)")
     t.add_argument("--out-prefix", required=True,
-                   help="writes <prefix>.starts.tsv, .kernel.tsv, .factors.tsv, .starts_stats.tsv")
+                   help="writes <prefix>.starts.tsv, .lengths.tsv, .profiles.tsv, .kernel.tsv, .factors.tsv, "
+                        ".starts_stats.tsv")
     t.add_argument("--start-lengths", type=read_lengths, metavar="LO-HI",
-                   help="read lengths that count (default: the longest run of lengths whose harringtonine P-sites "
-                        "peak at nt 0 of the annotated starts in every library)")
+                   help="read lengths that count (default: those that pass the QC in --length-window: their P-sites "
+                        "peak within 2 nt of the annotated starts in every harringtonine library, and have a clear "
+                        "frame in every library; see <prefix>.lengths.tsv)")
+    t.add_argument("--length-window", type=read_lengths, metavar="LO-HI", default=starts.WINDOW,
+                   help="the read lengths the QC chooses the start lengths from (default "
+                        f"{starts.WINDOW[0]}-{starts.WINDOW[1]}: an 80S footprint is about 28 nt)")
     t.add_argument("--start-codons", type=codons, metavar="CODON,...",
                    help=f"with --scan: the start codons to test (default {','.join(starts.START_CODONS)}). The "
                         "annotated starts are tested whatever their codon")
     t.add_argument("--fdr", type=float, default=starts.FDR,
                    help="the BH cut: the scan calls the starts with q below it, and starts_stats.tsv counts them")
+    g = sub.add_parser("plot", help="QC figures of a `pitstop starts` run: read lengths, frames, profiles "
+                                    "(needs matplotlib: pip install pitstop[plot])")
+    g.add_argument("--prefix", required=True,
+                   help="out prefix of a `pitstop starts` run: reads <prefix>.lengths.tsv and .profiles.tsv, writes "
+                        "<prefix>.lengths.pdf")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if a.command == "quant":
@@ -92,9 +102,12 @@ def main(argv=None):
                  min_support=a.min_offset_support, tol=a.tol, max_iter=a.max_iter)
     elif a.command == "score":
         score.run(a.orfs_prefix, a.out_prefix, frame_lengths=a.frame_lengths)
+    elif a.command == "plot":
+        from . import plot
+        plot.run(a.prefix)
     else:
         starts.run(a.libraries, a.gtf, a.fasta, a.out_prefix, orfs_path=a.orfs, scan=a.scan,
-                   start_lengths=a.start_lengths, start_codons=a.start_codons, fdr=a.fdr)
+                   start_lengths=a.start_lengths, start_codons=a.start_codons, fdr=a.fdr, window=a.length_window)
 
 
 if __name__ == "__main__":
