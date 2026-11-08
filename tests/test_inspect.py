@@ -128,8 +128,8 @@ def test_untemplated(clean, untemplated):
     assert s["mismatch5_background"] == 0
     assert s["clip5_share"] == pytest.approx(sum(r[2].startswith("1S") for r in reads) / len(reads))
     assert s["mismatch5_T"] > 0.6
-    assert (s["flag_untemplated"], s["repair"]) == ("fail", "rule 1")
-    # rule 1 gives back the footprints of the run without the added nt
+    assert (s["flag_untemplated"], s["repair"]) == ("fail", "yes")
+    # repair gives back the footprints of the run without the added nt
     t, t0 = out["lengths"], clean[1]["lengths"]
     rep = t.loc[t["reads_repaired"] > 0, ["reads_repaired", "class_repaired"]]
     assert np.allclose(rep["reads_repaired"], t0["reads"])

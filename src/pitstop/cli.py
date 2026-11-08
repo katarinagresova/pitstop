@@ -1,7 +1,7 @@
 import argparse
 import logging
 
-from . import __version__, inspect, orfs, score, starts
+from . import __version__, inspect, orfs, repair, score, starts
 from .quant import quantify
 
 
@@ -50,6 +50,14 @@ def main(argv=None):
     i.add_argument("--out-prefix", required=True,
                    help="writes <prefix>.inspect.html, .summary.tsv, .lengths.tsv, .anchors.tsv, .ends.tsv, "
                         ".complexity.tsv")
+    r = sub.add_parser("repair", help="clip the untemplated 5' nt: a new BAM in which the extra 5' nucleotides that "
+                                      "do not match the transcript are soft clips, and a table of the reads it changed")
+    r.add_argument("--bam", required=True, help="transcriptome alignments (reference names = transcript ids)")
+    r.add_argument("--gtf", required=True)
+    r.add_argument("--fasta", required=True, help="genome FASTA of the GTF")
+    r.add_argument("--out-prefix", required=True,
+                   help="writes <prefix>.bam (and <prefix>.bam.bai if the input is sorted by coordinate), "
+                        "<prefix>.repair.tsv")
     q = sub.add_parser("quant", help="P-site offsets and CDS quantification from a transcriptome BAM")
     add_shared(q, "quant.tsv, .offsets.tsv, .ties.tsv, .stats.tsv, .psites.tsv, .qc.tsv")
     o = sub.add_parser("orfs", help="reads per ORF in its reading frame (one P-site offset per read length), "
@@ -99,6 +107,8 @@ def main(argv=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if a.command == "inspect":
         inspect.run(a.bam, a.gtf, a.fasta, a.out_prefix)
+    elif a.command == "repair":
+        repair.run(a.bam, a.gtf, a.fasta, a.out_prefix)
     elif a.command == "quant":
         quantify(a.bam, a.gtf, a.fasta, a.read_lengths, a.out_prefix, offsets_path=a.offsets,
                  min_support=a.min_offset_support, tol=a.tol, max_iter=a.max_iter)

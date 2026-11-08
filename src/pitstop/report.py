@@ -1,5 +1,5 @@
-"""HTML reports: one self-contained page per run, built only from the run's tables (the report of `inspect`; the report
-of `starts` follows, PLAN.md 7.7).
+"""HTML reports: one self-contained page per run, built only from the run's tables (the report of `inspect`; a report
+of `starts` will follow).
 
 The page needs no other file and no network. The figures are matplotlib SVG in the page. They are drawn in the light
 colours of THEME, and then each of these colours becomes its CSS variable, so the figures follow the light or dark
@@ -61,7 +61,7 @@ DISTANCE = 0.3       # a larger length distance: the reads without a CDS are mos
 RISING = 0.3         # new footprints per read at full depth at this or more: the curve still rises
 BIAS = 1.5           # an end preference this strong (or 1 / BIAS) gets advice
 SHOWN = 0.001        # the figures show the lengths from the first to the last with this share of the reads
-CHANGED = 0.02       # the frame section names the clean share after repair rule 1 if it changes by this much
+CHANGED = 0.02       # the frame section names the clean share after repair if it changes by this much
 HIDDEN = 0.005       # the next steps name the hidden added nt from this share
 STATE = {"pass": ("✓", "Pass"), "warn": ("!", "Warn"), "fail": ("✕", "Fail"), "unknown": ("?", "Unknown"),
          "info": ("i", "Info")}
@@ -593,10 +593,15 @@ def next_steps(s, t):
     inputs = f"--gtf {s['gtf']} --fasta {s['fasta']}"
     clean = int_list(s["clean_lengths"])
     if st["untemplated"] == "fail":
-        out.append(("Run repair (rule 1).",
+        out.append(("For the next alignment: let the aligner clip the added nucleotide.",
                     f"{pct(s['mismatch5'], 0)} of the reads start with a nucleotide that does not match the transcript "
-                    f"({pct(s['mismatch5_T'], 0)} of them T), and the aligner kept it in the alignment. Rule 1 clips "
-                    f"it. Expected clean share: {f2(s['clean_share'])} → {f2(s['clean_share_repaired'])}.",
+                    f"({pct(s['mismatch5_T'], 0)} of them T), and the aligner kept it in the alignment. An aligner "
+                    "that soft-clips the read ends removes it: STAR with --quantTranscriptomeSAMoutput BanSingleEnd "
+                    "for its transcriptome BAM (older STAR: --quantTranscriptomeBan Singleend), or bowtie2 --local. "
+                    "bowtie 1 cannot soft-clip.", None))
+        out.append(("For this BAM: run repair.",
+                    f"repair clips the untemplated 5′ nt. Expected clean share: {f2(s['clean_share'])} → "
+                    f"{f2(s['clean_share_repaired'])}.",
                     f"pitstop repair --bam {s['bam']} {inputs} --out-prefix {lib}.repaired"))
         out.append(("Inspect the repaired BAM, and take the read lengths from that report.",
                     f"Clean lengths now: {span(clean)} nt. Expected after repair: "
@@ -646,7 +651,7 @@ def next_steps(s, t):
     if st["end_spike"] == "warn":
         out.append(("Check the trimming of the reads.",
                     "A mismatch spike past position 1 of the 5′ end, or at the 3′ end, points to left-over UMI or "
-                    "adapter nucleotides. repair rule 2 (a fixed trim) is for this.", None))
+                    "adapter nucleotides. Trim them before the alignment (a fixed trim).", None))
     if st["untemplated"] == "fail" and s["untemplated_hidden"] > HIDDEN:
         out.append(("Not fixable per read.",
                     f"About {pct(s['untemplated_hidden'], 0)} of the reads carry an added nucleotide that matches the "
@@ -821,7 +826,7 @@ def inspect_report(prefix):
                 + ("" if isna(s["best_length"]) else
                    f" The best top-phase share is {f2(s['best_top_frame'])} at {int(s['best_length'])} nt."))]
     if abs(s["clean_share_repaired"] - s["clean_share"]) >= CHANGED:
-        fr_find.append(("info", f"After repair rule 1 the clean share would be {f2(s['clean_share_repaired'])} "
+        fr_find.append(("info", f"After repair the clean share would be {f2(s['clean_share_repaired'])} "
                                 f"({span(int_list(s['clean_lengths_repaired']))} nt)."))
     ft = t_all[["length", "interior", "phase0", "phase1", "phase2", "top_phase", "top_frame", "class",
                 "top_frame_repaired", "class_repaired"]]
@@ -830,7 +835,7 @@ def inspect_report(prefix):
         + fig_block("5′ phase of the reads in the CDS interior", charts["frame"],
                     "Each bar is one length; its bottom segment is the top phase, so a bottom segment that crosses "
                     f"the dashed line ({qc.CLEAN}) is a clean length. Faded: too few reads. A ring marks the top-phase "
-                    "share after repair rule 1, where it differs. The CDS interior: the read is at least "
+                    "share after repair, where it differs. The CDS interior: the read is at least "
                     f"{qc.INTERIOR} nt inside the CDS at both ends.",
                     legend([(None, "var(--f0)", "phase 0"), (None, "var(--f1)", "phase 1"),
                             (None, "var(--f2)", "phase 2"), ("ring", None, "top-phase share after repair"),
@@ -900,7 +905,7 @@ def end_lines(s, t, st):
                        if three else "So part of the extra length is at the 5′ end.")))
     if st["untemplated"] == "fail":
         out.append(("warn", "Part of each length has its 5′ end 1 nt upstream: the added 5′ nucleotide, not a second "
-                            "group of footprints. Repair rule 1 moves these reads back."))
+                            "group of footprints. repair clips the untemplated 5′ nt and moves these reads back."))
     clean = idx[idx["class"] == "clean"]
     if len(clean):
         peaks = sorted({nt(x) for x in clean["start_peak"].dropna()})
@@ -919,8 +924,9 @@ def mismatch_section(s, e, a5, charts, st, lib):
     m5, bg5 = s["mismatch5"], s["mismatch5_background"]
     if u == "fail":
         line = (f"The 5′ mismatch is {pct(m5)} against a background of {pct(bg5)}; {pct(s['mismatch5_T'], 0)} of these "
-                f"nucleotides are T. The aligner did not clip them (5′ clip {pct(s['clip5_share'])}). Repair rule 1 "
-                "clips them.")
+                f"nucleotides are T. The aligner did not clip them (5′ clip {pct(s['clip5_share'])}). An aligner "
+                "that soft-clips the read ends removes them in the next alignment; for this BAM, repair clips them "
+                "(Next steps).")
     elif u == "info":
         line = (f"The 5′ mismatch is {pct(m5)}, and the aligner clipped it (5′ clip {pct(s['clip5_share'])}). pitstop "
                 "removes a 5′ clip: nothing to do.")
@@ -930,7 +936,7 @@ def mismatch_section(s, e, a5, charts, st, lib):
         line = f"The 5′ mismatch ({pct(m5)}) is near the background ({pct(bg5)}). No added nucleotide to repair."
     sp = st["end_spike"]
     items = [(u, line), (sp, "A mismatch spike past position 1 of the 5′ end, or at the 3′ end: check the trimming "
-                             "(repair rule 2, a fixed trim)." if sp == "warn" else
+                             "(a fixed trim before the alignment)." if sp == "warn" else
                          "No mismatch spike past position 1, and none at the 3′ end: no fixed trim needed."
                          if sp == "pass" else "No read sequences.")]
     b = s["bias_max"]
@@ -984,7 +990,7 @@ def multiqc(prefix, s, t):
             {"clean_share": {"title": "Clean share", "description": "pitstop inspect: reads in clean lengths",
                              "min": 0, "max": 1, "format": "{:,.2f}", "scale": "RdYlGn"}},
             {"clean_share_repaired": {"title": "Clean (repair)", "description": "pitstop inspect: the clean share "
-                                      "after repair rule 1", "min": 0, "max": 1, "format": "{:,.2f}",
+                                      "after repair", "min": 0, "max": 1, "format": "{:,.2f}",
                                       "scale": "RdYlGn"}},
             {"mismatch5": {"title": "5' mismatch", "description": "pitstop inspect: the mismatch rate at the first nt "
                            "of the read", "min": 0, "max": 100, "suffix": "%", "format": "{:,.1f}", "scale": "OrRd"}},

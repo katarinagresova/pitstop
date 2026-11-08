@@ -12,8 +12,9 @@ CDS start) mod 3; the top frame of a length: the share of its top phase in the C
 commonest 5' end at the annotated starts (nt from the first nt of the start codon), in PEAK; beside: the larger of the
 two nt beside a peak, as a share of the peak. The offset of a length: minus its start peak, or DEFAULT_OFFSET with
 fewer than MIN_ANCHOR reads at the peak; its P-sites give the regions (leader, CDS, trailer: the stop codon and after;
-transcript: no CDS). Repair rule 1 (`pitstop repair`): up to RULE1 nt at the 5' end of the alignment that do not match
-the transcript become a soft clip; it stops at the first match.
+transcript: no CDS). Repair (`pitstop repair`) clips the untemplated 5' nt: of the first UNTEMPLATED_MAX nt of the
+read, from the first aligned nt on, each that does not match the transcript becomes a soft clip; it stops at the
+first match (an aligner's 5' soft clip counts towards the UNTEMPLATED_MAX nt, and one nt stays aligned).
 
 A class per length, the first rule that holds:
   few reads    fewer than MIN_FRAME reads in the CDS interior, or less than MIN_SHARE of the reads
@@ -28,7 +29,7 @@ The suggested read lengths: of the runs of consecutive clean lengths, the one wi
 Tables (<prefix>.<name>.tsv). The report (report.py) reads only these, so every number of the report is in a table.
   lengths     per length: the reads and their share; the CDS-interior reads and their phases; the start peak (its reads,
               share and beside); the 3' ends at the stops the same way (nt from the first nt of the stop codon); the
-              offset; the P-sites by region (shares); the class; after repair rule 1, the reads, top frame and class
+              offset; the P-sites by region (shares); the class; after repair, the reads, top frame and class
   anchors     per length: the reads by 5' end around the annotated starts (START_WINDOW), and by 3' end around the
               stops (STOP_WINDOW); share: of the length's reads in that window
   ends        per length and end, and for all lengths (length "all"): the reads, their soft clips (1, 2, 3 or more nt),
@@ -71,7 +72,7 @@ SHORT_CDS = 0.5      # and this share of the P-sites in the CDS or more
 PEAK = (-20, -4)     # the start peak is in this window, and leaves 2 codons (P and A site) in the read
 START_WINDOW = (-30, 0)   # anchors.tsv: the 5' ends, nt from the first nt of the start codon
 STOP_WINDOW = (-5, 30)    # anchors.tsv: the 3' ends, nt from the first nt of the stop codon
-RULE1 = 2            # repair rule 1: at most this many nt
+UNTEMPLATED_MAX = 2  # repair clips at most this many untemplated 5' nt
 LONG = 32            # long reads: this many nt or more
 SHORT_MAX = 22       # short reads: this many nt or fewer
 DISOME = (50, 70)    # disomes
@@ -83,8 +84,7 @@ for _i, _b in enumerate(b"ACGT"):
     CODE[_b] = _i
 BASES = "ACGT"
 
-# The cuts of the flags. First values (the mock-up of the report); step 2 of PLAN.md 7.4 sets them on the 20 libraries
-# of section 7.1.
+# The cuts of the flags: first values, not yet set on data.
 WEAK_FRAME = (0.5, 0.3)      # clean share: pass >= 0.5, warn >= 0.3, else fail
 LONG_READS = (0.10, 0.25)    # share at LONG nt or more: pass < 0.10, warn < 0.25, else fail
 UNTEMPLATED = (0.05, 5)      # 5' mismatch >= 0.05 and >= 5x its background ...
@@ -218,16 +218,17 @@ def length_table(pos5, length, ctx, lengths):
     return out, start, stop
 
 
-def rule1(aln, ends, ctx):
-    """Per alignment: the nt that repair rule 1 clips (0..RULE1)."""
+def untemplated_clip(aln, ends, ctx):
+    """Per alignment: the untemplated 5' nt that repair clips (0..UNTEMPLATED_MAX; repair.to_clip for one alignment)."""
     c5 = ends.clip5.astype(np.int64)
+    aligned = aln.length.astype(np.int64) - ends.clip3
     k = np.zeros(aln.read.size, dtype=np.int64)
     go = np.ones(aln.read.size, dtype=bool)
-    for j in range(RULE1):
+    for j in range(UNTEMPLATED_MAX):
         q = c5 + j
         rb = CODE[ends.head[aln.read, np.minimum(q, K - 1)]]
         tb = ctx.nt(aln.pos5.astype(np.int64) + j)
-        go &= (q < K) & (j < aln.length - 1) & (rb < 4) & (tb < 4) & (rb != tb)
+        go &= (q < UNTEMPLATED_MAX) & (j < aligned - 1) & (rb < 4) & (tb < 4) & (rb != tb)
         k += go
     return k
 
@@ -470,7 +471,7 @@ def summary(stats, aln, lengths_df, ends_df, cplx, reads_per_footprint, names):
     s["mismatch3_background"] = a3[bg].astype(float).mean()
     s["clip5_share"] = a5["clip1"] + a5["clip2"] + a5["clip3plus"]
     # an added nt that matches the transcript is not seen: about 1/4 of the transcript nt are T, so the hidden part is
-    # about 1/3 of the seen part (PLAN.md 7.1, finding 1)
+    # about 1/3 of the seen part
     s["untemplated_hidden"] = max(0.0, s["mismatch5"] - s["mismatch5_background"]) / 3 if pd.notna(s["mismatch5"]) \
         else np.nan
     bias = [(abs(np.log2(r[f"bias_{b}"])), r[f"bias_{b}"], f"{e}' {b}")
@@ -479,7 +480,7 @@ def summary(stats, aln, lengths_df, ends_df, cplx, reads_per_footprint, names):
     s["bias_max"], s["bias_max_at"] = top[1], top[2]
     f = flags(s)
     s.update({f"flag_{k}": f[k] for k in FLAGS})
-    s["repair"] = "rule 1" if f["untemplated"] == "fail" else "no"
+    s["repair"] = "yes" if f["untemplated"] == "fail" else "no"
     return s
 
 
@@ -502,7 +503,7 @@ def run(bam_path, gtf, fasta, out_prefix, report=True):
     ctx = Context(read_weights(aln), coding, np.where(coding, anno.cds_start[t], -1),
                   np.where(coding, anno.cds_end[t], -1), aln.ref, flat, first, size)
     pos5, length = aln.pos5.astype(np.int64), aln.length.astype(np.int64)
-    k = rule1(aln, ends, ctx)
+    k = untemplated_clip(aln, ends, ctx)
     lengths = (int(min(length.min(), (length - k).min())), int(length.max()))
     now, start, stop = length_table(pos5, length, ctx, lengths)
     rep, _, _ = length_table(pos5 + k, length - k, ctx, lengths)
@@ -523,7 +524,7 @@ def run(bam_path, gtf, fasta, out_prefix, report=True):
     write(ends_df, f"{out_prefix}.ends.tsv")
     write(cplx, f"{out_prefix}.complexity.tsv")
     write(pd.DataFrame([s]), f"{out_prefix}.summary.tsv")
-    log.info("clean share %.3f (after repair rule 1: %.3f); read lengths %s; flags: %s", s["clean_share"],
+    log.info("clean share %.3f (after repair: %.3f); read lengths %s; flags: %s", s["clean_share"],
              s["clean_share_repaired"], s["read_lengths"] or "none",
              ", ".join(f"{k} {s['flag_' + k]}" for k in FLAGS if s["flag_" + k] != "pass"))
     if report:

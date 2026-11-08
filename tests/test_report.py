@@ -97,9 +97,10 @@ def test_flags_and_steps(runs):
     for name in ("Weak frame", "Long reads", "Under-digestion", "Untemplated 5′ nt", "End spike", "Mixed lengths",
                  "Short state", "Low complexity"):
         assert name in text
-    assert "Run repair (rule 1)." in text
+    assert "For the next alignment: let the aligner clip the added nucleotide." in text and "bowtie2 --local" in text
+    assert text.index("For the next alignment") < text.index("For this BAM: run repair.")
     clean = visible_text(page(runs["clean"][1]))
-    assert "Use the clean lengths: 28–29 nt." in clean and "Run repair" not in clean
+    assert "Use the clean lengths: 28–29 nt." in clean and "run repair" not in clean and "For the next" not in clean
     assert "Mixed lengths: 27 nt." in clean
 
 
