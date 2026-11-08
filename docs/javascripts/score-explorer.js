@@ -3,7 +3,7 @@
   "use strict";
   const NS = "http://www.w3.org/2000/svg";
   const C = { f0: "#2a9d8f", off: "#9aa5b1", cds: "#4c78a8", text: "#263238", muted: "#78909c", axis: "#b0bec5" };
-  const CUT = 0.0026;   // the p cut of q < 0.05 in orfs.md's 6 real libraries
+  const CUT = 0.0016;   // the p cut of q < 0.05 in orfs.md's 6 real libraries
 
   // ln k!, for the binomial.
   const LF = [0];

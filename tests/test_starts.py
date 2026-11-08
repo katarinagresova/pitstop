@@ -73,25 +73,49 @@ def test_calibrate():
     assert c["length"].tolist() == list(range(24, 24 + len(cases)))
     assert c["calibrated"].tolist() == [x[3] for x in cases]
     assert c["shift"].tolist() == [x[4] for x in cases]
+    assert not c["mixed"].any()
+
+
+def test_calibrate_mixed():
+    # a nt beside the start peak with half the peak's P-sites or more: the 5' ends split between two offsets, the
+    # length is mixed (it still moves by minus the peak)
+    def prof(peak, at, beside, side):
+        r = np.ones(starts.PROFILE[1] - starts.PROFILE[0])
+        r[peak - starts.PROFILE[0]] = at
+        r[peak + side - starts.PROFILE[0]] = beside
+        return r
+    cases = [  # (start peak, P-sites at it, P-sites beside it, side) -> mixed
+        (-1, 100, 88, 1, True),        # eIF 30 nt: offsets 13 and 12
+        (0, 100, 45, -1, False),       # eIF 25 nt at most
+        (0, 100, 50, -1, True),
+        (-15, 100, 60, 1, True),       # a peak at the profile's first nt
+        (0, 10, 9, 1, False)]          # too few P-sites at the peak to tell
+    c = starts.calibrate(np.array([prof(*x[:4]) for x in cases]), np.ones((len(cases), 3)),
+                         (24, 24 + len(cases) - 1))
+    assert c["start_peak"].tolist() == [x[0] for x in cases]
+    assert c["beside_peak"].tolist() == [x[2] for x in cases]
+    assert c["mixed"].tolist() == [x[4] for x in cases]
+    assert c.loc[0, "calibrated"] and c.loc[0, "shift"] == 1
 
 
 def test_choose_start_lengths():
-    # two libraries per length (a harringtonine and an elongation one): the window, calibration in the harringtonine
-    # library and a frame in both decide; of the passing runs, the one with the most P-sites
+    # two libraries per length (a harringtonine and an elongation one): the window, calibration and mixed offsets in
+    # the harringtonine library and a frame in both decide; of the passing runs, the one with the most P-sites
     rows = []
-    for length, cal, per, reads in [(22, True, True, 900), (23, True, True, 10), (24, False, True, 10),
-                                    (25, True, True, 25), (26, True, True, 25), (27, True, False, 10),
-                                    (28, True, True, 20), (29, True, True, 20), (30, True, True, 20),
-                                    (35, True, True, 10)]:
+    for length, cal, mix, per, reads in [(22, True, "", True, 900), (23, True, "harringtonine", True, 10),
+                                         (24, False, "", True, 10), (25, True, "elongation", True, 25),
+                                         (26, True, "", True, 25), (27, True, "", False, 10), (28, True, "", True, 20),
+                                         (29, True, "", True, 20), (30, True, "", True, 20), (35, True, "", True, 10)]:
         for kind in ("harringtonine", "elongation"):
             rows.append({"library": kind, "kind": kind, "length": length, "psites": reads,
-                         "calibrated": cal or kind == "elongation", "periodic": per})
+                         "calibrated": cal or kind == "elongation", "mixed": kind == mix, "periodic": per})
     why, best = starts.choose_start_lengths(pd.DataFrame(rows), (23, 34))
     assert best == [28, 29, 30]          # 60 P-sites per library against 25-26's 50
     assert why[22] == why[35] == "outside the window 23-34"
+    assert why[23] == "mixed offsets in 1 of 1 harringtonine libraries"
     assert why[24] == "not calibrated in 1 of 1 harringtonine libraries"
     assert why[27] == "no clear frame in 2 of 2 libraries"
-    assert why[23] == why[25] == why[26] == "outside the run 28-30" and why[28] == "pass"
+    assert why[25] == why[26] == "outside the run 28-30" and why[28] == "pass"   # elongation libraries: no say
     assert starts.choose_start_lengths(pd.DataFrame(rows), (31, 34))[1] == []
 
 
@@ -159,6 +183,12 @@ def pool_sheet(d, data):
     return sheet
 
 
+def orfs_offsets(qc):
+    """Per row of lengths.tsv: the offset of its length in its library's orfs run (frames.tsv)."""
+    return np.array([pd.read_csv(f"{lib}.frames.tsv", sep="\t").set_index("length").at[length, "offset"]
+                     for lib, length in zip(qc["library"], qc["length"])])
+
+
 @pytest.fixture(scope="module")
 def started(tmp_path_factory):
     d = tmp_path_factory.mktemp("startsynth")
@@ -177,6 +207,8 @@ def test_start_lengths_from_kernel(started):
     qc = pd.read_csv(started["dir"] / "s.lengths.tsv", sep="\t")
     assert list(qc.columns) == starts.LENGTH_COLUMNS and len(qc) == 4 * 3
     assert qc["calibrated"].all() and (qc["shift"] == 0).all() and qc["periodic"].all() and qc["start_length"].all()
+    assert not qc["mixed"].any() and (qc["beside_peak"] < starts.MIXED * qc["at_peak"]).all()
+    assert (qc["offset"] == orfs_offsets(qc)).all()          # no shift: the orfs runs' offsets
     assert (qc["qc"] == "pass").all() and (qc["pool"] == "A").all()
     assert (qc["psites"] == qc[["leader", "CDS", "trailer", "transcript"]].sum(axis=1)).all()
     assert np.allclose(qc.groupby("library")["share"].sum(), 1)
@@ -195,7 +227,7 @@ def extended(tmp_path_factory):
     # the harringtonine libraries leave most 30 nt 5' ends 1 nt longer (another digestion): with the pool's offsets
     # (from the elongation libraries) their P-sites peak at nt -1 and sit in frame 2 inside the CDSs
     d = tmp_path_factory.mktemp("extended")
-    data = make_start_dataset(d, harr_offsets={30: [(13, .6), (12, .25), (14, .15)]})
+    data = make_start_dataset(d, harr_offsets={30: [(13, .7), (12, .2), (14, .1)]})
     sheet = pool_sheet(d, data)
     out, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(d / "s"), str(data["orfs"]))
     return dict(dir=d, out=out, stats=st)
@@ -209,6 +241,8 @@ def test_calibration_moves_a_shifted_length(extended):
     assert (cal.loc[moved, "start_peak"] == -1).all() and (cal.loc[moved, "shift"] == 1).all()
     assert (cal.loc[moved, "frame2"] > cal.loc[moved, ["frame0", "frame1"]].max(axis=1)).all()
     assert (cal.loc[~moved, "shift"] == 0).all() and cal["calibrated"].all()
+    assert (cal["offset"] == orfs_offsets(cal) + moved).all()   # 30 nt of the harringtonine libraries: 1 nt more
+    assert not cal["mixed"].any()                  # 20% of the 5' ends at offset 12: one offset holds
     assert extended["stats"]["start_lengths"] == "28,29,30"
     k = pd.read_csv(extended["dir"] / "s.kernel.tsv", sep="\t")
     assert (k.loc[k.groupby("length")["kernel"].idxmax(), "nt"] == 0).all()
@@ -219,12 +253,27 @@ def test_calibration_moves_a_shifted_length(extended):
     assert q["S6_pause"] > 0.05 and q["S7_quiet"] > 0.05
 
 
+def test_mixed_length_is_not_a_start_length(tmp_path):
+    # the harringtonine libraries split their 30 nt 5' ends between offsets 13 and 12 (as eIF): the start peak has
+    # the nt beside it at about its height, so 30 nt is mixed there (the elongation libraries' is not) and the start
+    # lengths are 28-29. Its P-sites still move by minus the peak
+    data = make_start_dataset(tmp_path, harr_offsets={30: [(13, .5), (12, .5)]})
+    sheet = pool_sheet(tmp_path, data)
+    _, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(tmp_path / "s"), str(data["orfs"]))
+    qc = pd.read_csv(tmp_path / "s.lengths.tsv", sep="\t")
+    mixed = (qc["kind"] == "harringtonine") & (qc["length"] == 30)
+    assert qc.loc[mixed, "mixed"].all() and not qc.loc[~mixed, "mixed"].any()
+    assert (qc.loc[mixed, "offset"] == orfs_offsets(qc[mixed]) - qc.loc[mixed, "start_peak"]).all()
+    assert (qc.loc[qc["length"] == 30, "qc"] == "mixed offsets in 2 of 2 harringtonine libraries").all()
+    assert st["start_lengths"] == "28,29"
+
+
 def test_synthetic_calls(started):
-    # synthetic truth for given starts. Over seeds 3-12: every annotated start called; 2 of 70 planted starts missed
-    # (q 0.07-0.09, a uORF ATG and the pair's ATG); the pause and the untranslated uORF never called; at most
-    # one of the ten untranslated filler candidates called (q 0.009-0.025: BH among true starts). The pair's
-    # CTG gets the ATG's nt -1 reads and is called in 6 of 10 seeds: the scan's near-start rule, not this
-    # test, drops it. The pair's ATG and the first of the two close starts always have the smaller p.
+    # synthetic truth for given starts. Over seeds 3-12: every annotated start called; 1 of 70 planted starts missed
+    # (a uORF CTG, q 0.99); the untranslated uORF never called, the pause in 3 seeds (q 0.015-0.040); at most two
+    # of the ten untranslated filler candidates called (q 0.027-0.043: BH among true starts). The pair's CTG gets
+    # the ATG's nt -1 reads but is never called (the scan's near-start rule would drop it). The pair's ATG and the
+    # first of the two close starts always have the smaller p.
     out = started["out"].set_index("ORF_id")
     q, p = out["q"], out["p"]
     cds = out[out.index.str.endswith(":CDS")]
@@ -259,11 +308,16 @@ def test_length_window(started, tmp_path):
     with pytest.raises(ValueError, match="no read length passes the QC"):
         cli.main(args + ["--out-prefix", str(tmp_path / "w"), "--length-window", "31-34"])
     qc = pd.read_csv(tmp_path / "w.lengths.tsv", sep="\t")
-    assert (qc["qc"] == "outside the window 31-34").all() and not qc["start_length"].any()
+    assert qc["qc"].str.startswith("outside the window 31-34").all() and not qc["start_length"].any()
     cli.main(args + ["--out-prefix", str(tmp_path / "g"), "--length-window", "31-34", "--start-lengths", "29-30"])
     qc = pd.read_csv(tmp_path / "g.lengths.tsv", sep="\t")
     assert qc.loc[qc["start_length"], "length"].unique().tolist() == [29, 30]
     assert pd.read_csv(tmp_path / "g.starts_stats.tsv", sep="\t").set_index("stat").at["start_lengths", "value"] == "29,30"
+    # pitstop plot draws the lengths in the window and the start lengths; all if that leaves none
+    from pitstop import plot
+    assert plot.length_window(qc) == (31, 34) and plot.shown(qc) == [29, 30]
+    assert plot.shown(pd.read_csv(tmp_path / "w.lengths.tsv", sep="\t")) == [28, 29, 30]
+    assert plot.length_window(pd.read_csv(started["dir"] / "s.lengths.tsv", sep="\t")) is None
 
 
 def test_plot(started, tmp_path):
@@ -277,11 +331,11 @@ def test_plot(started, tmp_path):
 
 
 def test_scan_calls(started):
-    # synthetic truth for the scan. Over seeds 3-12: every annotated start called; 61 of 70 planted starts called at their
-    # codon, the misses at 4-5x enrichment with 1-5 elongation reads (q 0.06-0.3); the pair's CTG and the weaker
+    # synthetic truth for the scan. Over seeds 3-12: every annotated start called; 66 of 70 planted starts called at their
+    # codon, the misses at 1.1-4.2x enrichment with 3-6 elongation reads (q 0.08-1); the pair's CTG and the weaker
     # start 5 codons after a planted one are never called, and listed with the start that stops them; the pause
-    # and the untranslated uORF never called. Calls at no planted start: 0-5 per seed in leaders (q >= 0.012 but
-    # one), 2-8 in CDSs (about BH's share: the CDS null windows are at 0.6-0.8x alpha)
+    # and the untranslated uORF never called. Calls at no planted start: 0-4 per seed in leaders (q >= 0.012 but
+    # one), 1-6 in CDSs
     data = started["data"]
     out = started["scan"]
     key = {f"{n}_{s + 1}": i for i, (n, s, e, _, _) in data["orf_coords"].items()}
@@ -332,7 +386,7 @@ def test_scan_start_codons_and_fdr(started, tmp_path):
 def test_scan_null_windows_clear_of_called_starts(started, tmp_path, monkeypatch):
     # a scan calibrates phi again on the null windows outside the codons 1-10 of the starts of a first call (run-off,
     # as after an annotated start); given starts calibrate it once. The synthetic sets have too few null windows near
-    # a start for phi to change (seeds 3-8: 0-6 of about 300), so a loose cut makes the first call reach them
+    # a start for phi to change (seeds 3-12: 0-6 of 281-353), so a loose cut makes the first call reach them
     seen = []
     real = starts.calibrate_phi
     monkeypatch.setattr(starts, "calibrate_phi", lambda h, m, v, r: seen.append(len(h)) or real(h, m, v, r))

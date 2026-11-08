@@ -16,12 +16,15 @@ annotated starts (nt -15..32); the frame is the dominant frame of the P-sites we
 is calibrated when its start peak is within MAX_SHIFT nt of nt 0 (with MIN_ANCHOR P-sites or more) and the
 frame does not clearly put the P-sites elsewhere (FRAME_GUARD); its P-sites then move by minus the peak. The
 frame alone cannot tell a codon (-1 and +2 are both frame 2), the start peak can. A length that is not
-calibrated moves by its frame if that is clear, else stays. The start lengths come from a QC of each read length
-in each library: in WINDOW (an 80S footprint is about 28 nt; the window keeps out short RNA fragments), calibrated
-in every harringtonine library, and periodic in every library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of
-them in the top frame); of the runs of consecutive such lengths, the one with the most P-sites. Only their P-sites
-count, one per alignment. <prefix>.lengths.tsv has the QC, <prefix>.profiles.tsv the profiles behind it (P-sites
-from the pool's offsets, before the calibration) for `pitstop plot`.
+calibrated moves by its frame if that is clear, else stays. A length is mixed when a nt beside its start peak has
+MIXED of the peak's P-sites or more: its 5' ends split between two offsets, and one offset puts the P-sites of the
+other 1 nt off. The start
+lengths come from a QC of each read length in each library: in WINDOW (an 80S footprint is about 28 nt; the window
+keeps out short RNA fragments), calibrated and not mixed in every harringtonine library, and periodic in every
+library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of them in the top frame); of the runs of consecutive such
+lengths, the one with the most P-sites. Only their P-sites count, one per alignment. <prefix>.lengths.tsv has the
+QC and each length's offset (the orfs run's, plus the shift), <prefix>.profiles.tsv the profiles behind it
+(P-sites from the pool's offsets, before the calibration) for `pitstop plot`.
 
 Background, per pool. The harringtonine / elongation ratio depends on the region, and in the CDS on
 the distance from the start (run-off). h = s_t f_b e: a factor per bin of region and distance (BINS),
@@ -77,6 +80,7 @@ PROFILE = (-15, 63)  # nt from the annotated start: the kernel to codon 10, then
 KERNEL_END = 33
 MAX_SHIFT = 2        # calibration: a start peak this many nt or fewer from nt 0 can be moved onto it
 MIN_ANCHOR = 20      # calibration: P-sites at the start peak, summed over the annotated starts
+MIXED = 0.5          # a length is mixed when a nt beside its start peak has this share of the peak's P-sites or more
 INTERIOR = 15        # the frame: P-sites at least this many nt inside the CDS at both ends (as orfs.INTERIOR)
 MIN_FRAME = 100      # the frame decides (guard, fallback) only with this many P-sites inside the CDSs
 FRAME_GUARD = 1.5    # the frame is clear when its dominant frame has this many times the P-sites of the other
@@ -85,8 +89,8 @@ MIN_TOP = 0.4        # start lengths: the top frame has this share of a length's
 STOP_PROFILE = (-45, 15)   # QC profiles: nt from the first nt of the stop codon (codons -15..4)
 CDS_BINS = 20        # QC profiles: bins along the CDS
 LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "leader", "CDS", "trailer", "transcript",
-                  "frame0", "frame1", "frame2", "top_frame", "periodic", "start_peak", "at_peak", "calibrated", "shift",
-                  "qc", "start_length"]
+                  "frame0", "frame1", "frame2", "top_frame", "periodic", "start_peak", "at_peak", "beside_peak", "mixed",
+                  "calibrated", "shift", "offset", "qc", "start_length"]
 STRIDE = WIN[1] - WIN[0]   # one null codon per window width for the null windows: they do not overlap
 FDR = 0.05           # the BH cut of a call
 MAX_MULTI = 0.5      # null windows: multimapped share of the window's reads below this
@@ -334,10 +338,15 @@ def calibrate(prof, frames, lengths):
     it). Calibrated: the start peak is within MAX_SHIFT nt of nt 0, has MIN_ANCHOR P-sites or more, and the frame is
     not clearly against it (the dominant frame, with MIN_FRAME interior P-sites or more, has FRAME_GUARD times the
     P-sites of the frame that the shift moves onto frame 0). Shift: minus the peak; for a length that is not
-    calibrated, the shift that moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), else 0."""
+    calibrated, the shift that moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), else 0.
+    Mixed: MIN_ANCHOR P-sites or more at the peak, and the larger of the two nt beside it (beside_peak) has MIXED of
+    them or more."""
     n = np.arange(len(prof))
     peak = np.argmax(prof[:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
     at_peak = prof[n, peak - PROFILE[0]]
+    padded = np.pad(prof, ((0, 0), (1, 1)))   # a peak at nt -15 has no nt before it in the profile
+    beside = np.maximum(padded[n, peak - PROFILE[0]], padded[n, peak - PROFILE[0] + 2])
+    mixed = (at_peak >= MIN_ANCHOR) & (beside >= MIXED * at_peak)
     total = frames.sum(axis=1)
     dominant = frames.argmax(axis=1)
     against = (total >= MIN_FRAME) & (dominant != peak % 3) & (frames[n, dominant] >= FRAME_GUARD * frames[n, peak % 3])
@@ -346,6 +355,7 @@ def calibrate(prof, frames, lengths):
     clear = (total >= MIN_FRAME) & (top2[:, 1] >= FRAME_GUARD * top2[:, 0])
     shift = np.where(calibrated, -peak, np.where(clear, np.array([0, -1, 1])[dominant], 0))
     return pd.DataFrame({"length": np.arange(lengths[0], lengths[1] + 1), "start_peak": peak, "at_peak": at_peak,
+                         "beside_peak": beside, "mixed": mixed,
                          "frame0": frames[:, 0], "frame1": frames[:, 1], "frame2": frames[:, 2],
                          "calibrated": calibrated, "shift": shift})
 
@@ -369,11 +379,13 @@ def length_qc(prof, frames, regions, lengths):
 
 def choose_start_lengths(table, window):
     """The QC verdict per read length ("pass", or why not) and the start lengths. table: length_qc's rows of every
-    library, with kind. A start length is in the window, calibrated in every harringtonine library and periodic in
-    every library; of the runs of consecutive such lengths, the one with the most P-sites (the first if tied)."""
+    library, with kind. A start length is in the window, calibrated and not mixed in every harringtonine library and
+    periodic in every library; of the runs of consecutive such lengths, the one with the most P-sites (the first if
+    tied)."""
     harr = table["kind"] == "harringtonine"
     n_harr, n_lib = table.loc[harr, "library"].nunique(), table["library"].nunique()
     uncal = (~table.loc[harr, "calibrated"]).groupby(table.loc[harr, "length"]).sum()
+    mixed = table.loc[harr, "mixed"].groupby(table.loc[harr, "length"]).sum()
     aperiodic = (~table["periodic"]).groupby(table["length"]).sum()
     reads = table.groupby("length")["psites"].sum()
     why = {}
@@ -383,6 +395,8 @@ def choose_start_lengths(table, window):
             r.append(f"outside the window {window[0]}-{window[1]}")
         if uncal.get(length, 0):
             r.append(f"not calibrated in {uncal[length]} of {n_harr} harringtonine libraries")
+        if mixed.get(length, 0):
+            r.append(f"mixed offsets in {mixed[length]} of {n_harr} harringtonine libraries")
         if aperiodic[length]:
             r.append(f"no clear frame in {aperiodic[length]} of {n_lib} libraries")
         why[int(length)] = "; ".join(r)
@@ -654,9 +668,12 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     qc, profiles = [], []
     for p, (pos, length, _) in psites.items():
         start = profile(pos, length, tx, cs_flat, (lo, hi))
-        qc.append(length_qc(start, interior_frames(pos, length, tx, layout, (lo, hi)),
-                            region_counts(pos, length, region, (lo, hi)), (lo, hi))
-                  .assign(library=p, pool=pool_of[p], kind=role[p]))
+        q = length_qc(start, interior_frames(pos, length, tx, layout, (lo, hi)),
+                      region_counts(pos, length, region, (lo, hi)), (lo, hi)).assign(library=p, pool=pool_of[p],
+                                                                                      kind=role[p])
+        orfs_offset = pd.read_csv(f"{p}.frames.tsv", sep="\t").set_index("length")["offset"].astype("Int64")
+        q["offset"] = q["length"].map(orfs_offset).astype("Int64") + q["shift"]   # the offset the P-sites end at
+        qc.append(q)
         profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
                                     cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
     table = pd.concat(qc, ignore_index=True)
@@ -669,9 +686,9 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         f"{out_prefix}.profiles.tsv", sep="\t", index=False)
     del profiles
     if not start_lengths:
-        raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated in every "
-                         f"harringtonine library, a clear frame in every library): see {out_prefix}.lengths.tsv, "
-                         "or choose them with --start-lengths")
+        raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated and not "
+                         f"mixed in every harringtonine library, a clear frame in every library): see "
+                         f"{out_prefix}.lengths.tsv, or choose them with --start-lengths")
     st["length_window"] = f"{window[0]}-{window[1]}"
     st["start_lengths"] = ",".join(map(str, start_lengths))
     log.info("start lengths: %s", start_lengths)

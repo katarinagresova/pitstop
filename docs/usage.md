@@ -127,7 +127,7 @@ it works and how to read it: [Start sites](starts.md).
 | `<prefix>.starts.tsv` | one row per tested start: `Name start codon region frame ORF_id harringtonine elongation expected enrichment p typical_p q multimapped shoulder`. `harringtonine` and `elongation` are the P-sites in the start's window (nt -1 to +2 of the start codon), summed over the replicates and pools; `expected` is the harringtonine P-sites that the elongation profile predicts there; `q` is BH per class (annotated starts; other starts per region: leader, CDS, trailer, transcript without a CDS); `typical_p` is the p the window would have with the reads of a typical used start; `multimapped` is the share of the window's reads with another alignment; `shoulder` is log2 harringtonine / elongation P-sites (+1 each) in the codons 1-5 after the start, minus the same in the 5 codons before its window (a used start raises its codons 1-5; not part of the test). With `--scan` also `called stopped_by end type`. |
 | `<prefix>.start_orfs.tsv` | with `--scan`: the ORF of each called start, to its first in-frame stop, but the annotated CDSs: `ORF_id Name start end type start_codon` and the start evidence. `ORF_id` is `<transcript>_<1-based start>`. `type` is `uORF`, `uoORF`, `extension` (in frame upstream of the CDS), `truncation` (in frame inside it), `internal` (out of frame inside it), `dORF` (after it) or `other` (no annotated CDS). An ORF table for `pitstop orfs --orfs`. |
 | `<prefix>.catalogue.tsv` | with `--scan`: the uORFs and uoORFs of the called starts, and every annotated CDS with its start evidence; the columns of `start_orfs.tsv`. An ORF table for `pitstop orfs --orfs`. |
-| `<prefix>.lengths.tsv` | the QC of the read lengths, per library and read length: `library pool kind length psites share leader CDS trailer transcript frame0 frame1 frame2 top_frame periodic start_peak at_peak calibrated shift qc start_length`. `psites` are its P-sites, `share` their share of the library's, `leader`-`transcript` the same per region; `frame0-2` are its P-sites per CDS frame, 15 nt or more inside the CDSs, and `top_frame` the share of the top frame; `periodic`: 100 of these P-sites or more and `top_frame` 0.4 or more. `start_peak` is the nt (-15 to +32 from the annotated starts) where its P-sites peak, `at_peak` their number there; `shift` is the nt its P-sites move. `qc` is the verdict on the length, `pass` or why not ([start lengths](starts.md#1-calibration-and-start-lengths)). It is written before the test, also when no length passes. |
+| `<prefix>.lengths.tsv` | the QC of the read lengths, per library and read length: `library pool kind length psites share leader CDS trailer transcript frame0 frame1 frame2 top_frame periodic start_peak at_peak beside_peak mixed calibrated shift offset qc start_length`. `psites` are its P-sites, `share` their share of the library's, `leader`-`transcript` the same per region; `frame0-2` are its P-sites per CDS frame, 15 nt or more inside the CDSs, and `top_frame` the share of the top frame; `periodic`: 100 of these P-sites or more and `top_frame` 0.4 or more. `start_peak` is the nt (-15 to +32 from the annotated starts) where its P-sites peak, `at_peak` their number there, `beside_peak` the number at the larger of the two nt beside it; `mixed`: `beside_peak` is half of `at_peak` or more (two offsets). `shift` is the nt its P-sites move, and `offset` the offset they end at: nt from the 5' end to the P-site, the `orfs` run's offset plus `shift`. `qc` is the verdict on the length, `pass` or why not ([start lengths](starts.md#1-calibration-and-start-lengths)). It is written before the test, also when no length passes. |
 | `<prefix>.profiles.tsv` | the profiles behind `lengths.tsv`, per library and read length, from the pool's offsets, before the calibration: `library length anchor x frame psites`. `anchor` `start`: P-sites at nt `x` (-15 to +62) from the annotated starts; `stop`: at nt `x` (-45 to +14) from the first nt of the stop codons; `cds`: in bin `x` of 20 along the CDSs. `frame` is the frame of the CDS. For `pitstop plot`. |
 | `<prefix>.kernel.tsv` | per pool, read length and nt from the annotated start (-15 to +32): harringtonine and elongation P-sites (after the calibration), and the kernel (harringtonine minus scaled elongation, as a share). |
 | `<prefix>.factors.tsv` | per pool: the harringtonine / elongation factor of each bin of region and distance. |
@@ -143,15 +143,20 @@ it works and how to read it: [Start sites](starts.md).
 pitstop plot --prefix out/starts      # writes out/starts.lengths.pdf
 ```
 
+Both draw only the read lengths in the length window (and start lengths
+outside it, from `--start-lengths`).
+
 - **Page 1**, a row per library: its P-sites per read length (the start
-  lengths dark, the length window shaded), and the start-length P-sites by
-  region (leader, CDS, trailer, transcripts without a CDS) and by frame inside
-  the CDSs.
+  lengths dark, mixed lengths hatched, the offset above each bar; for a mixed
+  length those of its start peak and of the nt beside it, as 13/12), and the
+  start-length P-sites by region (leader, CDS, trailer, transcripts without a
+  CDS) and by frame inside the CDSs.
 - **A page per library**, a row per read length: the frame of its P-sites
   inside the CDSs, its P-sites around the annotated starts and the stop
   codons per nt, and along the CDSs (5' to 3', per frame). Bars and lines are
   coloured by the frame of the CDS. The label says the share of the library's
-  P-sites, the calibration's move, and why a length is not a start length.
+  P-sites, the offset (and the calibration's move), for a mixed length the
+  other offset, and why a length is not a start length.
 
 What to look for: a start length has most of its P-sites in frame 0, a peak at
 nt 0 of the annotated starts (after its move), and in an elongation library a

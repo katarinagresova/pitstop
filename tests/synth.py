@@ -22,6 +22,11 @@ PLANTED = {28: [(12, .7), (11, .1), (13, .2)],
            29: [(12, .6), (11, .15), (13, .25)],
            30: [(12, .5), (13, .3), (14, .2)]}
 TRUE_OFFSETS = {(length, -d % 3): d for length, ds in PLANTED.items() for d, _ in ds}
+# make_start_dataset's: PLANTED's, but no length near `starts`' mixed lengths (a nt beside the start peak with half
+# its P-sites). With PLANTED's, 30 nt is mixed (0.6) and 29 nt at the edge (0.43-0.52 over seeds 3-12)
+START_OFFSETS = {28: PLANTED[28],
+                 29: [(12, .65), (11, .15), (13, .2)],
+                 30: [(12, .65), (13, .2), (14, .15)]}
 
 # name, strand, exons (kind, utr nt, codons, utr nt), isoforms {name: exon indices}, CDS reads per isoform
 GENES = [
@@ -442,8 +447,8 @@ def start_profiles(txs, orfs, pauses):
 
 def make_start_dataset(directory, seed=5, replicates=2, harr_offsets=None):
     """Reference, ORF table (the ORFs but the CDSs) and per replicate an elongation and a harringtonine BAM
-    (libs[(kind, rep)]). harr_offsets: {length: [(offset, probability)]} for the harringtonine libraries in place
-    of PLANTED's (another digestion: e.g. most 5' ends 1 nt longer)."""
+    (libs[(kind, rep)]), the 5' ends at START_OFFSETS. harr_offsets: {length: [(offset, probability)]} for the
+    harringtonine libraries in place of START_OFFSETS' (another digestion: e.g. most 5' ends 1 nt longer)."""
     rng = np.random.default_rng(seed)
     txs, orfs, pauses = build_start_transcripts(rng)
     genome, pos = [], 0
@@ -456,12 +461,12 @@ def make_start_dataset(directory, seed=5, replicates=2, harr_offsets=None):
     libs = {}
     for rep in range(1, replicates + 1):
         for k, kind in enumerate(("elongation", "harringtonine")):
-            offsets = {**PLANTED, **(harr_offsets or {})} if kind == "harringtonine" else PLANTED
+            offsets = {**START_OFFSETS, **(harr_offsets or {})} if kind == "harringtonine" else START_OFFSETS
             reads = []
             for name, tx in txs.items():
                 seq = tx["seq"]
                 for p in np.repeat(np.arange(len(seq)), rng.poisson(prof[name][k])):
-                    length = int(rng.choice(list(PLANTED)))
+                    length = int(rng.choice(list(START_OFFSETS)))
                     ds, ps = zip(*offsets[length])
                     pos5 = p - int(rng.choice(ds, p=ps))
                     if 0 <= pos5 <= len(seq) - length:

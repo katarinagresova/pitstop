@@ -62,10 +62,10 @@ many of its codons, show that ribosomes elongate through it.
 A real case, from libraries of a human cell line: one CUG in the leader of a
 highly expressed mRNA holds as many P-sites as the mRNA's AUG start codon, so
 a span count makes the ORF that starts at this CUG look well translated. But
-only 1.4-2.4% of the reads after the CUG are in that ORF's frame — the rest
+only 2.3-3.7% of the reads after the CUG are in that ORF's frame — the rest
 follow the CDS, which the ORF overlaps — and harringtonine, which holds ribosomes at start
 codons ([Ingolia et al. 2011](#references)), raises the AUG peak but not the
-CUG's: with it, the AUG has 11-19x the CUG's P-sites, without it about as
+CUG's: with it, the AUG has 11-18x the CUG's P-sites, without it about as
 many ([A peak is not a uORF](#a-peak-is-not-a-uorf)).
 
 **What pitstop does and does not do.** pitstop does not find ORFs. It takes a
@@ -75,11 +75,13 @@ catalogue (`--orfs`) — from an ORF caller such as RiboTaper
 ORFquant ([Calviello et al. 2020](#references)) or RiboTIE
 ([Clauwaert et al. 2025](#references)), or from a scan for start codons — and
 for every ORF in it counts the reads with their frame (`orfs`) and scores the
-frame evidence, pooled over libraries (`score`). It does not test where
-ribosomes start: start sites need Ribo-seq with an initiation inhibitor, such
-as harringtonine ([Ingolia et al. 2011](#references)) or lactimidomycin
-([Lee et al. 2012](#references)), which pitstop does not use. A call says that
-ribosomes elongate in the ORF's frame, not that they start at its start codon.
+frame evidence, pooled over libraries (`score`). These two commands do not
+test where ribosomes start: start sites need Ribo-seq with an initiation
+inhibitor, such as harringtonine ([Ingolia et al. 2011](#references)) or
+lactimidomycin ([Lee et al. 2012](#references)), and `pitstop starts` tests
+them and makes a catalogue from them ([Start sites](starts.md)). A call of
+`score` says that ribosomes elongate in the ORF's frame, not that they start
+at its start codon.
 
 ## At a glance
 
@@ -428,11 +430,11 @@ groups:
 | cannot be called | `min_p` above the p cut | Too few codons with reads: the ORF would not pass even if every one led. |
 
 **"Not called" does not mean "not translated".** Translated codons lead nearly
-every time they have reads: 0.89-0.96 of them in CDS windows downsampled to
+every time they have reads: 0.89-0.95 of them in CDS windows downsampled to
 uORF depth ([Power at uORF depth](#power-at-uorf-depth)). What limits the calls
 is how many codons have reads. With a median of 2 score-length reads per uORF,
-1,472 of a catalogue of 1,683 uORFs (87%) could not be called in those 6
-libraries; with a median of 12, in a pool of 15 libraries, 967 (57%) ([Calls
+2,963 of a catalogue of 3,383 uORFs (88%) could not be called in those 6
+libraries; with a median of 9, in a pool of 15 libraries, 2,112 (62%) ([Calls
 and depth](#calls-and-depth)). Report all three groups, not "called" against
 the rest.
 
@@ -444,7 +446,7 @@ most `codons` votes, one fewer than its codons:
 |---|---:|---:|---:|---:|---:|
 | `min_p` | 0.037 | 0.012 | 0.0041 | 0.0014 | 5.1e-5 |
 
-At q < 0.05, the p cut was 0.0026 in the 6 libraries and 0.0092 in the 15: 6
+At q < 0.05, the p cut was 0.0016 in the 6 libraries and 0.0057 in the 15: 6
 and 5 votes, all leading. An ORF of 5 codons or fewer could not be called in
 either, however deep the libraries. Reads clump, so $n$ reads cover fewer than
 $n$ codons: in 15-codon CDS windows, 20 reads covered a median of 7 codons
@@ -472,15 +474,16 @@ the empirical FDR is (decoys with `p` at or below the cut / `decoys_scored`) /
 `score_stats.tsv`. Decoys of translated ORFs are not null samples: only one
 frame of a codon can lead, a translated ORF takes it, and its shifted copies
 seldom lead. Thus the empirical FDR is conservative when many ORFs are
-translated, and the decoys of the ORFs not called make the better null set. At
-q < 0.05: 0 of 3,425 decoys passed the cut in the 6 libraries, 3 of 3,425 in
-the 15 (empirical FDR 0.004; [Is the null
+translated, and the decoys of the ORFs not called make the better null set.
+A decoy can also read a translated frame that is not in the catalogue. At
+q < 0.05: 13 of 7,675 decoys passed the cut in the 6 libraries, 40 of 7,675 in
+the 15 (empirical FDR 0.048 and 0.045; [Is the null
 calibrated?](#is-the-null-calibrated)).
 
 **Pooling.** `score` sums the libraries before it scores them. A pool gives
 more codons with reads, up to the ORF's `codons`, and a translated codon with
 more reads leads more often, but no pool gives an ORF more votes than it has
-codons. With 15 libraries instead of 6, uORF calls went from 66 to 310
+codons. With 15 libraries instead of 6, uORF calls went from 83 to 333
 ([Calls and depth](#calls-and-depth)).
 
 ## Typical workflow
@@ -537,11 +540,11 @@ pitstop score --orfs-prefix out/ctrl_{1,2,3} out/treat_{1,2,3} --out-prefix out/
    term move some reads between a CDS and the components around it. In 6
    human libraries, for CDSs with at least 10 reads, the median
    log2(`orfs` / `quant`) was 0, the 99th percentile of its absolute value
-   0.12-0.16, and the totals were 0.4-0.7% lower. For CDS quantification, use
+   0.12-0.14, and the totals were 0.2-0.3% lower. For CDS quantification, use
    `quant`.
 
-On human libraries, `orfs` took 24-132 s and at most 3.4 GB per library,
-and `score` 10-25 s and 0.2-0.3 GB for 6-15 libraries.
+On 15 human libraries, `orfs` took 20-72 s and at most 2.5 GB per library,
+and `score` 21-34 s and 0.25-0.42 GB for 6-15 libraries.
 
 ## Known limits
 
@@ -552,10 +555,10 @@ and `score` 10-25 s and 0.2-0.3 GB for 6-15 libraries.
   density alone, and often one ORF of the group gets all of them. The score
   can call the longer ORF on the shared codons alone
   ([Reading the results](#reading-the-results)). Sum the counts of a group, or
-  report it as one unit. In a real catalogue of 1,741 ORFs from an ORF caller,
-  310 ORFs are in 148 such groups; against a count that gives the shared reads
-  to every ORF of a group, the nested uORFs kept 0.53 of their reads, the
-  other uORFs 0.94
+  report it as one unit. In a real catalogue of 4,292 ORFs from a start scan,
+  387 ORFs are in 188 such groups; against a count that gives the shared reads
+  to every ORF of a group, the nested uORFs kept 0.54 of their reads, the
+  other uORFs 0.93
   ([What each counting rule changes](#what-each-counting-rule-changes)).
 - **A CDS start peak spills into an overlapping uoORF.** Reads of the CDS's
   start-codon peak that put their P-site 1-2 nt upstream of the start codon
@@ -568,19 +571,20 @@ and `score` 10-25 s and 0.2-0.3 GB for 6-15 libraries.
   uses the frame profile of all CDSs ([step 5](#5-the-codon-lead-score)), and
   CDSs differ in how many of their reads fall in their off-frames. This
   concerns uoORFs and other ORFs inside a CDS, at small `p`. On real data, in
-  10-codon windows in the off-frames of CDSs, p ≤ 0.001 came up 5-6x as often
-  as expected (p ≤ 0.05: 1.3-1.4x; [Is the null
-  calibrated?](#is-the-null-calibrated)). Each CDS's own frame profile would
-  halve the excess at p ≤ 0.001; part of the rest can be translation in the
-  off-frames.
+  10-codon windows in the off-frames of CDSs, p ≤ 0.001 came up 3.5-4.1x as
+  often as expected (p ≤ 0.05: 1.1-1.3x; [Is the null
+  calibrated?](#is-the-null-calibrated)). Each CDS's own frame profile (from
+  its reads outside the window) would remove more than half of the excess at
+  p ≤ 0.001, to 2.3x; part of the rest can be translation in the off-frames.
 - **uoORFs that stop after the CDS stop.** A uoORF starts upstream of the CDS,
   out of frame, and ends in the CDS or after it
   ([step 1](#1-the-orf-table)). One that ends after the CDS stop contains the
   whole CDS, which is often a sign that the annotated CDS stops too early.
   Find them by their `end` against the `end` of their transcript's CDS row in
-  `orfs.tsv`, and check them before a uORF analysis. Of the 59 uoORFs of the
-  [real-data ORF table](#the-data), 2 stop after the CDS stop, both on
-  transcripts whose annotated CDS stops early.
+  `orfs.tsv`, and check them before a uORF analysis. Of the 909 uoORFs of the
+  [real-data ORF table](#the-data), 2 stop after the CDS stop. Both contain a
+  short annotated CDS (29 and 86 codons), and both were called in the 15
+  libraries.
 - **Starts and stops made by a variant.** The start codon is not checked
   ([step 1](#1-the-orf-table)), so an ORF whose start codon comes from a
   variant in the sample is kept. The stop codon is checked against the genome
@@ -684,19 +688,21 @@ are not shipped with pitstop; the numbers come from its validation runs.
 
 ### The data
 
-- **6 libraries** of a human cell line: 2 conditions × 3 replicates. Read
-  lengths 18-30 nt; score lengths 27-28 nt, the only lengths with a frame-0
-  share of at least 0.9 in every library.
-- **15 libraries** of one condition of the same cell line, from 5
-  experiments of 3 replicates each (3 of them are also among the 6).
-- **6 harringtonine libraries**, one for each of the 6 libraries (same
-  condition and replicate), for the start peaks.
-- **The catalogue**: 1,741 ORFs that an ORF caller called in at least 3
-  of the 15 libraries: 1,683 uORFs
-  and 58 uoORFs, with ATG starts 1,051, CTG 416, GTG 150 and TTG 124, and a
-  median length of 30 nt. Added to it: the ORF that starts at the leader
-  CUG of [A peak is not a uORF](#a-peak-is-not-a-uorf), a uoORF, so 59
-  uoORFs in all.
+- **15 libraries** of a human cell line: five pools of 3 replicates from
+  four experiments (one experiment in two conditions), on a transcriptome
+  with one transcript per gene (12,519 with a CDS). Read lengths 18-34 nt.
+- **6 libraries**: the two conditions of one experiment, 3 replicates each.
+  27-28 nt are the only lengths with a frame-0 share of at least 0.9 in all
+  6, so `score` takes them by default. In the 15, no length reaches 0.9 in
+  every library; those runs give `--frame-lengths 27-28`
+  ([Which read lengths](#which-read-lengths)).
+- **The catalogue**: the start scan of [Start sites](starts.md), on the 15
+  harringtonine libraries matched to the 15: 4,291 ORFs, 3,383 uORFs and 908
+  uoORFs, with start codons ATG 1,722, CTG 1,005, GTG 441, AGG 257, ACG
+  217, TTG 198, AAG 173, ATT 111, ATC 93 and ATA 74, and a median length of
+  51 nt. Added to it: the ORF that starts at the leader CUG of [A peak is not
+  a uORF](#a-peak-is-not-a-uorf), a uoORF, so 909 uoORFs in all. 387 of the
+  ORFs are in 188 nested groups ([Known limits](#known-limits)).
 
 ### Is the null calibrated?
 
@@ -709,32 +715,35 @@ vote per codon ([step 5](#5-the-codon-lead-score)):
 
 | Windows | Null | p ≤ 0.05 | p ≤ 0.001 |
 |---|---|---:|---:|
-| leaders | multinomial | 505-600 / 112-113 | 24-56 / 0.2 |
-| | one vote | 312-353 / 101-104 | 12-26 / 0.1 |
-| trailers | multinomial | 342-780 / 92-95 | 49-148 / 0.3 |
-| | one vote | 215-599 / 89-90 | 20-57 / 0.1 |
-| CDS frame +1 | multinomial | 20,119 / 3,923 | 3,117 / 59 |
-| | one vote | 7,736 / 5,518 | 350 / 66 |
-| CDS frame +2 | multinomial | 17,041 / 7,918 | 1,467 / 79 |
-| | one vote | 9,272 / 6,962 | 473 / 79 |
+| leaders | multinomial | 314-332 / 72-74 | 9-14 / 0.1 |
+| | one vote | 158-170 / 62-64 | 1-6 / < 0.1 |
+| trailers | multinomial | 314-661 / 118-119 | 16-82 / 0.4 |
+| | one vote | 183-457 / 120-123 | 3-37 / 0.1 |
+| CDS frame +1 | multinomial | 14,119 / 1,862 | 2,766 / 54 |
+| | one vote | 5,294 / 3,991 | 264 / 64 |
+| CDS frame +2 | multinomial | 16,913 / 9,328 | 1,077 / 82 |
+| | one vote | 9,091 / 8,022 | 291 / 83 |
 
 One vote per codon removes much of the excess, but not all of it. Leaders
 and trailers are not clean null sets: they hold translated ORFs that are not
 in the catalogue, and trailers have a frame bias of unknown cause (at codons
-with 1 read, 0.30 / 0.36 / 0.34 of the reads in the CDS's frames 0 / 1 / 2,
-against 0.32 / 0.33 / 0.34 in leaders). This check cannot tell how much of
+with 1 read, 0.31 / 0.36 / 0.34 of the reads in the CDS's frames 0 / 1 / 2,
+against 0.34 / 0.32 / 0.34 in leaders). This check cannot tell how much of
 their excess is translation. In CDS off-frames, the null uses the frame
 profile of all CDSs, and CDSs differ ([Known limits](#known-limits)).
 
-The decoys say the opposite. Of the 2,258 decoys with votes, 11 had
-p ≤ 0.05 (32.1 expected) and 1 had p ≤ 0.01 (2.8). In the 15 libraries, of
-the 2,800 decoys with a null of 1/3 in every codon, 17 had p ≤ 0.05 (60.7),
-3 had p ≤ 0.01 (7.1) and 1 had p ≤ 0.001 (0.5). Part of this is by
-construction: a decoy of a translated ORF cannot lead
-([Reading the results](#reading-the-results)). The decoys of the 184 ORFs
-that the multinomial null called had none at p ≤ 0.05, against 9.7
-expected. At the q < 0.05 cut, 0 of 3,425 decoys passed in the 6 libraries,
-and 3 of 3,425 in the 15 (empirical FDR 0.004).
+The decoys have the same far tail. Of the 5,436 decoys with votes in the 6
+libraries, 70 had p ≤ 0.05 (78.2 expected), 27 had p ≤ 0.01 (8.0) and 10 had
+p ≤ 0.001 (0.5); of the 6,605 in the 15 libraries, 126 (136.6), 50 (16.3)
+and 20 (1.1). A decoy of a translated ORF seldom leads
+([Reading the results](#reading-the-results)): the decoys of the 338 ORFs
+that the multinomial null called in the 6 libraries had none at p ≤ 0.05,
+against 15.1 expected. But few ORFs of this catalogue are called, so most of
+its decoys fall on the same leaders and CDS off-frames as the null windows,
+and some read a translated frame that is not in the catalogue: in one decoy,
+25 of the 27 codons with reads lead. At the q < 0.05 cut, 13 of 7,675
+decoys passed in the 6 libraries and 40 in the 15: an empirical FDR of 0.048
+and 0.045, at the level of the q cut.
 
 ### Power at uORF depth
 
@@ -742,36 +751,36 @@ How many reads does a translated uORF need to be called? Windows of 6-50
 codons, each a vote, in the reading frame of annotated CDSs, which are
 translated, were cut to 5-320 reads by drawing reads without replacement (so
 the clumps stay), and scored as uORFs against the p cut of the 6 libraries
-(0.0026). The share of windows called:
+(0.0016). The share of windows called:
 
 <figure markdown="span">
-  ![Heatmap of the share of CDS windows called, by voting codons (6-50) and reads (5-320): 0 at 5 reads, rising with both; 0.5 at 15 codons and 20 reads, 0.8 or more from 20 codons and 40 reads](img/power.svg)
+  ![Heatmap of the share of CDS windows called, by voting codons (6-50) and reads (5-320): 0 at 5 reads, rising with both; about 0.5 at 15 codons and 20 reads, 0.8 or more from 20 codons and 40 reads](img/power.svg)
 </figure>
 
 ??? note "The numbers"
 
     | Voting codons \ reads | 5 | 10 | 20 | 40 | 80 | 160 | 320 |
     |---|---:|---:|---:|---:|---:|---:|---:|
-    | 6 | 0 | 0.01 | 0.07 | 0.21 | 0.33 | 0.50 | 0.57 |
-    | 10 | 0 | 0.11 | 0.31 | 0.56 | 0.72 | 0.77 | 0.86 |
-    | 15 | 0 | 0.22 | 0.52 | 0.73 | 0.88 | 0.93 | 0.97 |
-    | 20 | 0 | 0.30 | 0.64 | 0.85 | 0.95 | 0.98 | 0.99 |
-    | 30 | 0 | 0.41 | 0.76 | 0.92 | 0.98 | 0.99 | 0.99 |
-    | 50 | 0 | 0.48 | 0.84 | 0.97 | 0.99 | 1.00 | 1.00 |
+    | 6 | 0 | 0.02 | 0.07 | 0.18 | 0.33 | 0.46 | 0.54 |
+    | 10 | 0 | 0.09 | 0.27 | 0.51 | 0.61 | 0.76 | 0.88 |
+    | 15 | 0 | 0.20 | 0.46 | 0.74 | 0.84 | 0.90 | 0.96 |
+    | 20 | 0 | 0.28 | 0.60 | 0.84 | 0.94 | 0.98 | 0.98 |
+    | 30 | 0 | 0.37 | 0.76 | 0.91 | 0.97 | 0.99 | 0.98 |
+    | 50 | 0 | 0.44 | 0.84 | 0.94 | 0.99 | 1.00 | 1.00 |
 
 A uORF with 15 voting codons needs about 20 reads to be called half the time;
 80% needs about 20 codons and 40 reads, or 15 codons and 80. At every size
-and depth, 0.89-0.96 of the codons with reads lead, so the limit is the
+and depth, 0.89-0.95 of the codons with reads lead, so the limit is the
 number of codons with reads: 20 reads cover a median of 7 of 15 codons, and 6
 votes that all lead are needed.
 
 Applied to the catalogue, a uORF's **power** is the share of CDS windows with
-its codons and reads that are called. 1,472 of the 1,683 uORFs cannot be called
-at all (`min_p` above the cut), and if every uORF were translated as CDSs are,
-203 calls would be expected; 66 were made. Of the 100 uORFs with a power of at
-least 0.8, 45 were called. The 55 others had fewer leading codons (a median of
-0.60 of the codons with reads, against 0.87) and a lower in-frame share (0.74
-against 0.86).
+its codons and reads that are called. 2,963 of the 3,383 uORFs cannot be
+called at all (`min_p` above the cut), and if every uORF were translated as
+CDSs are, 395 calls would be expected; 83 were made. Of the 189 uORFs with a
+power of at least 0.8, 50 were called. The 139 others had fewer leading
+codons (a median of 0.53 of the codons with reads, against 0.87) and a lower
+in-frame share (0.48 against 0.89).
 
 ### Calls and depth
 
@@ -780,90 +789,92 @@ nt):
 
 | | 6 libraries | 15 libraries |
 |---|---:|---:|
-| p cut (largest `p` with q < 0.05) | 0.0026 | 0.0092 |
+| p cut (largest `p` with q < 0.05) | 0.0016 | 0.0057 |
 | Votes needed, all leading | 6 | 5 |
-| uORFs with no reads (of 1,683) | 510 | 220 |
-| uORF reads, median | 2 | 12 |
-| uORFs that cannot be called | 1,472 | 967 |
-| uORFs called | 66 | 310 |
-| uoORFs called (of 59) | 31 | 46 |
-| Decoys at the cut (of 3,425) | 0 | 3 |
-| Empirical FDR at the cut | 0 | 0.004 |
+| uORFs with no reads (of 3,383) | 962 | 403 |
+| uORF reads, median | 2 | 9 |
+| uORFs that cannot be called | 2,963 | 2,112 |
+| uORFs called | 83 | 333 |
+| uoORFs called (of 909) | 67 | 160 |
+| Decoys at the cut (of 7,675) | 13 | 40 |
+| Empirical FDR at the cut | 0.048 | 0.045 |
 
-With 2.5 times the libraries, the score called 4.7 times the uORFs, and the
-decoys stayed below the FDR. 91 of the 97 calls of the 6 libraries were also
-calls of the 15; the other 6 had a median `q` of 0.10 there.
+With 2.5 times the libraries, the score called 4 times the uORFs and 2.4
+times the uoORFs, and the decoys stayed at the level of the q cut. 139 of the
+150 calls of the 6 libraries were also calls of the 15; the other 11 had a
+median `q` of 0.18 there.
 
 ### Which read lengths
 
 The frame-0 share per read length (`frames.tsv`), lowest and highest over
 the 6 libraries:
 
-| nt | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| lowest | 0.41 | 0.61 | 0.64 | 0.68 | 0.58 | 0.65 | 0.67 | 0.48 | 0.71 | 0.90 | 0.93 | 0.69 | 0.46 |
-| highest | 0.48 | 0.72 | 0.79 | 0.74 | 0.66 | 0.67 | 0.72 | 0.57 | 0.75 | 0.93 | 0.95 | 0.81 | 0.60 |
+| nt | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowest | 0.59 | 0.75 | 0.85 | 0.73 | 0.66 | 0.65 | 0.62 | 0.47 | 0.71 | 0.90 | 0.91 | 0.64 | 0.44 | 0.38 | 0.38 | 0.33 | 0.35 |
+| highest | 0.63 | 0.82 | 0.90 | 0.78 | 0.69 | 0.68 | 0.65 | 0.55 | 0.75 | 0.93 | 0.94 | 0.76 | 0.56 | 0.46 | 0.43 | 0.39 | 0.38 |
 
-27-28 nt hold 59% of the reads in the 15 libraries. More score lengths add
+27-28 nt hold 56% of the reads in the 15 libraries. More score lengths add
 reads, but not calls (15 libraries):
 
 | Score lengths | uORF reads, median | uORF calls | uoORF calls | Calls lost / new against 27-28 | Decoys at the cut |
 |---|---:|---:|---:|---:|---:|
-| 27-28 | 12 | 310 | 46 | - | 3 |
-| 26-28 | 17 | 305 | 44 | 45 / 38 | 3 |
-| 26-29 | 18 | 317 | 44 | 43 / 48 | 3 |
-| 24-29 | 21 | 319 | 46 | 47 / 56 | 3 |
-| 18-30 | 24 | 306 | 45 | 69 / 64 | 5 |
-| 28 | 6 | 197 | 44 | 129 / 14 | 3 |
+| 27-28 | 9 | 333 | 160 | - | 40 |
+| 26-28 | 11 | 342 | 143 | 90 / 82 | 33 |
+| 26-29 | 12 | 351 | 142 | 100 / 100 | 32 |
+| 24-29 | 14 | 318 | 114 | 144 / 83 | 32 |
+| 18-30 | 16 | 314 | 105 | 159 / 85 | 27 |
+| 28 | 4 | 114 | 92 | 308 / 21 | 13 |
 
 The added reads go mostly to codons that already have reads: the median
 number of votes per uORF goes from 4 to 5 at most. And they have a weaker
 frame: in the called uORFs, the median share of leading codons goes from
-0.86 to 0.80. Fewer lengths lose calls: without 27 nt, whose frame is
-weaker in one of the 5 experiments (frame-0 share 0.79-0.81), 129 of the
-356 calls are lost.
+0.88 to 0.81, and the uoORF calls go down. Fewer lengths lose calls: without
+27 nt, whose frame is weaker in one of the five pools (frame-0 share
+0.80-0.83, against up to 0.93), 308 of the 493 calls are lost.
 
-### Frame evidence is not start evidence
+### Start evidence is not frame evidence
 
-Harringtonine holds ribosomes at start codons. In the 6 harringtonine
-libraries, the offsets of `orfs` put the start peak on nt 0 of annotated
-start codons at 23-29 nt; at 27-28 nt, 52-62% of the P-sites from nt -15 to
-+17 are on nt 0. A catalogue ORF has a **start peak** when its start codon
-(± 1 codon) holds more harringtonine P-sites than expected: against the 30
-nt on each side (local), or against the elongation libraries of the same
-condition, as a larger share of the transcript's harringtonine P-sites than
-of its elongation P-sites (elongation).
+Every uORF of this catalogue starts at a codon where harringtonine holds more
+ribosomes than the elongation libraries predict ([Start sites](starts.md)).
+Few of them have a frame that the score accepts, even with the power to be
+called (6 libraries):
 
-At the same power, called and not-called uORFs had start peaks equally
-often (15-library calls, one condition):
+| uORF power | uORFs | Called |
+|---|---:|---:|
+| below 0.2 | 2,767 | 2 |
+| 0.2-0.5 | 239 | 12 |
+| 0.5-0.8 | 188 | 19 |
+| 0.8 or more | 189 | 50 (26%) |
 
-| uORFs, power ≥ 0.8 | n | Start peak, local | Start peak, elongation |
-|---|---:|---:|---:|
-| called | 248 | 168 (68%) | 130 (52%) |
-| not called | 243 | 171 (70%) | 122 (50%) |
-
-Over all uORFs, start peaks were nearly as frequent as at annotated CDS starts
-of the same depth. So most catalogue uORFs start as CDSs do, and about half of
-those that start and have power have no frame that the score accepts. A call
-says that ribosomes elongate in the ORF's frame, not that they start at its
-start codon ([Background](#background)).
+If these uORFs were translated as CDSs are, 80% or more of the last row would
+be called. The 139 not called have reads, but fewer than half of them in the
+uORF's frame (median in-frame share 0.48, against 0.89 in the called). Part
+of the gap can be false start calls, which the scan estimates to be more
+frequent among deep leader starts (26%, 95% interval 7-64%;
+[Start sites](starts.md#reading-the-results)). A start call says that
+ribosomes start at the codon; a call of `score` says that they elongate in
+the ORF's frame over many codons. One does not imply the other
+([Background](#background)).
 
 ### A peak is not a uORF
 
 The leader of a highly expressed mRNA has a CUG, made by a variant of this
-cell line, that holds 73-89% of the leader's P-sites. In the elongation
+cell line, that holds 70-73% of the leader's P-sites. In the elongation
 libraries, nt 0 of the CUG has as many P-sites as nt 0 of the mRNA's AUG
-start codon (514 and 510 in one condition, 52 and 60 in the other).
+start codon (520 and 542 in one condition, 52 and 62 in the other). The
+start scan does not test it, because the reference genome has CUC there.
 
-- **Counts.** `orfs` counts the peak for the ORF that starts at the CUG: 842
-  reads over the 6 libraries, 0.6-1.4% of the CDS's reads per library. A
+- **Counts.** `orfs` counts the peak for the ORF that starts at the CUG: 860
+  reads over the 6 libraries, 0.5-1.4% of the CDS's reads per library. A
   count alone makes this ORF look translated.
-- **Frame.** Only 1.4% of the ORF's score-length P-sites are in its frame
-  (2.4% in the 15 libraries); the rest follow the CDS, which the ORF
-  overlaps. `p` is 1 in the 6 libraries, `q` 0.77 in the 15: not called.
+- **Frame.** Only 2.3% of the ORF's score-length P-sites are in its frame
+  (3.7% in the 15 libraries); the rest follow the CDS, which the ORF
+  overlaps. `p` is 0.87 in the 6 libraries and 0.92 in the 15, `q` 1 in
+  both: not called.
 - **Start.** Harringtonine raises the AUG peak but not the CUG's: with it,
-  the AUG has 11-19 times the CUG's P-sites (5,559 against 488, and 845
-  against 44). So the CUG peak is not a usual start peak.
+  the AUG has 11-18 times the CUG's P-sites (5,450 against 502, and 843
+  against 47). So the CUG peak is not a usual start peak.
 
 ### What each counting rule changes
 
@@ -876,25 +887,28 @@ step, toward `orfs`. Totals over the 6 libraries, relative to the span count:
 | Step | uORF | uoORF | CDS | leader |
 |---|---:|---:|---:|---:|
 | Span count | 1 | 1 | 1 | 1 |
-| Without antisense alignments | 0.972 | 0.708 | 0.979 | 0.852 |
-| Without the other alignments `orfs` drops ([Method, step 2](method.md#2-reads)) | 0.970 | 0.707 | 0.978 | 0.845 |
-| Footprints of 18-30 nt | 0.976 | 0.724 | 0.984 | 0.705 |
-| One offset per read length | 0.973 | 0.721 | 0.984 | 0.717 |
-| One count per read: 1 / its alignments | 0.934 | 0.658 | 0.851 | 0.639 |
-| uoORFs over their whole span | 0.934 | 1.615 | 0.851 | 0.639 |
-| `orfs`: the EM with the frame term | 0.833 | 1.213 | 0.931 | 0.632 |
+| Without antisense alignments | 1 | 1 | 1 | 1 |
+| Without the other alignments `orfs` drops ([Method, step 2](method.md#2-reads)) | 1 | 1 | 1 | 1 |
+| Footprints of 18-34 nt | 1.017 | 1.016 | 1.023 | 1.026 |
+| One offset per read length | 1.016 | 1.037 | 1.023 | 1.055 |
+| One count per read: 1 / its alignments | 0.977 | 1.033 | 0.983 | 0.957 |
+| uoORFs over their whole span | 0.977 | 6.111 | 0.983 | 0.957 |
+| `orfs`: the EM with the frame term | 0.844 | 1.192 | 0.983 | 0.940 |
 
-- **Antisense alignments** were 14% of the span count's alignments, and 29%
-  of its uoORF reads.
-- **The offsets** changed few counts: of the uORFs with at least 10 reads,
-  4 moved by more than 0.5 in log2.
-- **One count per read** removed 13.5% of the CDS total; the EM step gave
-  60% of it back.
-- **uoORFs** got 2.5 times the reads over their whole span; the EM and the
-  frame term then left 75% of that to them.
+- **Antisense and other dropped alignments**: these BAMs hold only sense
+  alignments without clips, so the two steps change nothing here. With other
+  aligners they can; `stats.tsv` counts what `orfs` drops.
+- **Footprints of 18-34 nt** add 1.6-2.6%: more reads of 18-19 nt come in
+  than reads of 35-40 nt go out.
+- **The offsets** changed few counts: of the 1,315 uORFs with at least 10
+  reads, none moved by more than 0.5 in log2.
+- **One count per read** removed 3.8% of the CDS total and 9.3% of the
+  leader total; the EM step left the CDS total unchanged.
+- **uoORFs** got 5.9 times the reads over their whole span; the EM and the
+  frame term then left 20% of that to them.
 - **uORFs** lost most in the EM step, and the nested ones most of all
-  ([Known limits](#known-limits)): against the span count, nested uORFs
-  kept 0.53 of their reads, the others 0.94.
+  ([Known limits](#known-limits)): in that step, nested uORFs kept 0.54 of
+  their reads, the others 0.93.
 
 ## Determinism
 
@@ -902,21 +916,18 @@ As for `quant`: no random numbers anywhere, ties go to the smallest tie-break,
 and a rerun — of `orfs` or of `score` — gives byte-identical output. Pooling a
 library with itself in `score` doubles `reads` and leaves `leads` unchanged. On
 real data, a rerun of `orfs` (one library) and of `score` (the 6 libraries) was
-byte-identical, and `quant`'s outputs on the 6 libraries were the same before
-and after `orfs` and `score` were added. Time and memory: [Typical
-workflow](#typical-workflow).
+byte-identical, and `quant`'s outputs were the same before and after `orfs`
+and `score` were added. Time and memory: [Typical workflow](#typical-workflow).
 
 As in `quant`, inputs that should give the same counts but are not the same
 files can move counts a little, most of all between near-identical ORFs
 or CDSs ([Method, Determinism](method.md#determinism)). On real data:
 
 - Removing some transcripts' alignments from a BAM, which changes the order
-  of the other reads, moved counts by 0.03 reads or less.
-- Taking 6,612 transcripts without reads out of a run moved 9 of 1.28 million
-  rows by more than 0.5 reads. The largest move was 6.9 reads, between three
-  near-identical paralog CDSs; their sum moved by 0.13 reads, and the
-  log-likelihoods agree within 5e-4. `p` in the pooled `scores.tsv` moved by
-  4e-8 or less.
+  of the other reads, moved counts by 0.032 reads or less.
+- Taking the 650 transcripts without reads in the 6 libraries out of the
+  GTF moved 1 of 271,320 rows by more than 0.5 reads, by 0.50 reads.
+  `p` in the pooled `scores.tsv` moved by 2e-7 or less.
 
 Compare such runs with a tolerance, not byte for byte.
 
