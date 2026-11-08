@@ -7,14 +7,13 @@ name = "pitstop"
 dynamic = ["version"]
 license = "Apache-2.0"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.1", "pysam>=0.22"]
+dependencies = ["numpy>=1.26", "scipy>=1.11", "pandas>=2.1", "pysam>=0.22", "matplotlib>=3.8"]
 
 [project.scripts]
 pitstop = "pitstop.cli:main"
 
 [project.optional-dependencies]
 docs = ["zensical; python_version >= '3.11'"]  # zensical needs Python 3.11+
-plot = ["matplotlib>=3.8"]  # pitstop plot
 
 [tool.setuptools.dynamic]
 version = {attr = "pitstop.__version__"}

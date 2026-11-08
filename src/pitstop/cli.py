@@ -1,7 +1,7 @@
 import argparse
 import logging
 
-from . import __version__, orfs, score, starts
+from . import __version__, inspect, orfs, score, starts
 from .quant import quantify
 
 
@@ -42,6 +42,14 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="pitstop")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
+    i = sub.add_parser("inspect", help="read QC of one library: the read lengths and their frames, regions, read ends "
+                                       "and complexity; flags, the read lengths to use, and an HTML report")
+    i.add_argument("--bam", required=True, help="transcriptome alignments (reference names = transcript ids)")
+    i.add_argument("--gtf", required=True)
+    i.add_argument("--fasta", required=True, help="genome FASTA of the GTF")
+    i.add_argument("--out-prefix", required=True,
+                   help="writes <prefix>.inspect.html, .summary.tsv, .lengths.tsv, .anchors.tsv, .ends.tsv, "
+                        ".complexity.tsv")
     q = sub.add_parser("quant", help="P-site offsets and CDS quantification from a transcriptome BAM")
     add_shared(q, "quant.tsv, .offsets.tsv, .ties.tsv, .stats.tsv, .psites.tsv, .qc.tsv")
     o = sub.add_parser("orfs", help="reads per ORF in its reading frame (one P-site offset per read length), "
@@ -89,7 +97,9 @@ def main(argv=None):
                    help="the BH cut: the scan calls the starts with q below it, and starts_stats.tsv counts them")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    if a.command == "quant":
+    if a.command == "inspect":
+        inspect.run(a.bam, a.gtf, a.fasta, a.out_prefix)
+    elif a.command == "quant":
         quantify(a.bam, a.gtf, a.fasta, a.read_lengths, a.out_prefix, offsets_path=a.offsets,
                  min_support=a.min_offset_support, tol=a.tol, max_iter=a.max_iter)
     elif a.command == "orfs":

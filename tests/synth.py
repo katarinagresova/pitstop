@@ -478,3 +478,72 @@ def make_start_dataset(directory, seed=5, replicates=2, harr_offsets=None):
     orf_path = directory / "starts_orfs.tsv"
     orf_path.write_text("ORF_id\tName\tstart\tend\n" + "".join(f"{i}\t{n}\t{s}\t{e}\n" for i, n, s, e in table))
     return dict(fasta=fa, gtf=gtf, orfs=orf_path, libs=libs, txs=txs, orf_coords=orfs, pauses=pauses)
+
+
+# inspect dataset (make_inspect_dataset): the transcripts of GENES, footprints whose P-sites are on the CDS codons (with
+# start and stop peaks), and one length per problem: length -> (share of the CDS reads, {offset: probability}).
+INSPECT_LENGTHS = {21: (0.10, {12: 1.0}),                    # short state: 5' end at -12, short at the 3' end
+                   27: (0.15, {12: 0.5, 11: 0.5}),           # mixed: two groups of 5' ends
+                   28: (0.35, {12: 0.9, 13: 0.05, 11: 0.05}),
+                   29: (0.25, {12: 0.85, 13: 0.10, 11: 0.05}),
+                   34: (0.15, {13: 1.0})}                    # long: the extra length at the 3' end
+FRAGMENT = 20         # RNA fragments: uniform in the trailers and on the transcript without a CDS
+UNTEMPLATED = "T"     # the added 5' nt (A where the transcript has T)
+
+
+def make_inspect_dataset(directory, seed=7, scale=2, fragments=1500, copied=0.1, copies=2, untemplated=0.0,
+                         junk_cigar_reads=5, unknown_ref_reads=9):
+    """reads.bam with known truth. copied: the share of the footprints that get `copies` extra reads (other names).
+    untemplated: the share of the reads with an added 5' nt that mismatches the transcript; half of them soft-clipped
+    (1S), half aligned (the alignment starts 1 nt before the footprint). Truth: the reads as (name, seq, cigar, hits),
+    their footprint (pitstop's view: transcript, 5' end, length) and whether the added nt is aligned."""
+    rng = np.random.default_rng(seed)
+    genome, txs = build(rng)
+    fa, gtf = write_reference(directory, genome, txs)
+    lengths = list(INSPECT_LENGTHS)
+    weights = np.array([INSPECT_LENGTHS[x][0] for x in lengths])
+    feet = []   # (transcript, 5' end, length)
+    for _, _, _, _, abundance in GENES:
+        for name, n in abundance.items():
+            tx = txs[name]
+            cs, ce = tx["cds_start"], tx["cds_end"]
+            n *= scale
+            psites = list(cs + 3 * rng.integers(0, (ce - cs) // 3, n))
+            peak = int(5 * n / ((ce - cs) // 3))
+            psites += [cs] * peak + [ce - 3] * peak
+            for p in psites:
+                length = lengths[rng.choice(len(lengths), p=weights / weights.sum())]
+                offs, probs = zip(*INSPECT_LENGTHS[length][1].items())
+                p5 = p - rng.choice(offs, p=probs)
+                if 0 <= p5 and p5 + length <= len(tx["seq"]):
+                    feet.append((name, int(p5), length))
+    ends = [(t, tx["cds_end"] + 3, len(tx["seq"])) for t, tx in txs.items() if tx["cds_start"] is not None]
+    ends += [(t, 0, len(tx["seq"])) for t, tx in txs.items() if tx["cds_start"] is None]
+    for _ in range(fragments):
+        t, lo, hi = ends[rng.integers(len(ends))]
+        if hi - lo > FRAGMENT:
+            feet.append((t, int(rng.integers(lo, hi - FRAGMENT)), FRAGMENT))
+    feet += [f for f in feet if rng.random() < copied for _ in range(copies)]
+    reads = []
+    for i, (t, p5, length) in enumerate(feet):
+        seq = txs[t]["seq"][p5:p5 + length]
+        hits = [(u, p) for u, tx in txs.items() for p in _find_all(tx["seq"], seq)]
+        name = f"r{i}"
+        cigar, aligned = f"{length}M", False
+        if rng.random() < untemplated:
+            before = {txs[u]["seq"][p - 1] if p > 0 else "" for u, p in hits}
+            add = "A" if UNTEMPLATED in before else UNTEMPLATED
+            seq = add + seq
+            if rng.random() < 0.5 and all(p > 0 for _, p in hits):
+                cigar, aligned, hits = f"{length + 1}M", True, [(u, p - 1) for u, p in hits]
+            else:
+                cigar = f"1S{length}M"
+        reads.append((name, seq, cigar, hits, (t, p5, length), aligned))
+    for j in range(junk_cigar_reads):
+        t = next(iter(txs))
+        reads.append((f"junk_{j}", txs[t]["seq"][100:127], "10M1D17M", [(t, 100)], None, False))
+    for j in range(unknown_ref_reads):
+        reads.append((f"unknown_{j}", "A" * 28, "28M", [("unannotated", 5)], None, False))
+    bam_path = directory / "reads.bam"
+    write_bam(bam_path, txs, [r[:4] for r in reads])
+    return dict(fasta=fa, gtf=gtf, bam=bam_path, txs=txs, reads=reads)

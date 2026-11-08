@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 _MATCH = {0, 7, 8}   # M, =, X
 _SOFT = 4
 _SKIP = 0x4 | 0x10 | 0x800   # unmapped, reverse, supplementary
+K = 8                # read_bam(with_ends=True): the nt kept from each end of a read
 
 
 @dataclass
@@ -42,6 +43,23 @@ class Alignments:
         return int(np.unique(self.read).size)
 
 
+@dataclass
+class Ends:
+    """The ends of the reads (read_bam with with_ends=True), for `inspect`."""
+    clip5: np.ndarray    # per alignment: nt of the 5' soft clip (at most 255)
+    clip3: np.ndarray    # per alignment: nt of the 3' soft clip (at most 255)
+    head: np.ndarray     # (reads, K) uint8 ASCII: the first K nt of the read, N-padded at the right; N if no sequence
+    tail: np.ndarray     # (reads, K) uint8 ASCII: the last K nt of the read (the last nt in column K - 1), N-padded
+                         # at the left
+
+
+def _clips(cigar):
+    """(5' soft clip, 3' soft clip) of a CIGAR, at most 255 each."""
+    c5 = cigar[0][1] if cigar[0][0] == _SOFT else 0
+    c3 = cigar[-1][1] if len(cigar) > 1 and cigar[-1][0] == _SOFT else 0
+    return min(c5, 255), min(c3, 255)
+
+
 def _footprint_length(cigar):
     """Read length minus the 5' soft clip, or None if the CIGAR is not matches + end soft clips."""
     first, last = 0, len(cigar)
@@ -58,16 +76,21 @@ def _footprint_length(cigar):
     return aligned + three if aligned else None
 
 
-def read_bam(path, anno, stats, keep=None):
+def read_bam(path, anno, stats, keep=None, with_ends=False):
     """All forward alignments with an acceptable CIGAR. stats gets the read counts. With `keep` (transcript
     ids), alignments to other BAM references are counted but not kept: refs_not_in_gtf,
-    alignments_dropped_ref_not_in_gtf (those with an acceptable CIGAR). All other counts are as without `keep`."""
+    alignments_dropped_ref_not_in_gtf (those with an acceptable CIGAR). All other counts are as without `keep`.
+    with_ends: returns (Alignments, Ends); the sequence of a read is from its first kept alignment that has one."""
     index = anno.index()
     names, last, r = {}, None, -1
     cigar_ok = bytearray()   # per read: 1 if it has an alignment with an acceptable CIGAR
     fp_of = {}               # CIGAR string -> footprint length, 0 if not acceptable
     read, ref, pos5, length = array("i"), array("i"), array("i"), array("i")   # C int: int32
     n_bad_cigar_aln = n_dropped = 0
+    if with_ends:
+        clip5, clip3, clips_of = array("B"), array("B"), {}
+        ends_seq, has_seq = bytearray(), bytearray()   # per read: K head nt + K tail nt; 1 once filled
+        blank = b"N" * (2 * K)
     with pysam.AlignmentFile(path, "rb", check_sq=False) as bam:
         refs = [r.split("|", 1)[0] for r in bam.references]
         ref_tx = np.array([index.get(r, -1) for r in refs], dtype=np.int32)
@@ -91,6 +114,9 @@ def read_bam(path, anno, stats, keep=None):
                 r = names.setdefault(q, len(names))
                 if r == len(cigar_ok):
                     cigar_ok.append(0)
+                    if with_ends:
+                        ends_seq += blank
+                        has_seq.append(0)
                 last = q
             c = a.cigarstring
             fp = fp_of.get(c)
@@ -108,6 +134,17 @@ def read_bam(path, anno, stats, keep=None):
             ref.append(i)
             pos5.append(a.reference_start)
             length.append(fp)
+            if with_ends:
+                cl = clips_of.get(c)
+                if cl is None:
+                    cl = clips_of[c] = _clips(a.cigartuples)
+                clip5.append(cl[0])
+                clip3.append(cl[1])
+                if not has_seq[r]:
+                    sq = a.query_sequence
+                    if sq:
+                        ends_seq[2 * K * r:2 * K * (r + 1)] = (sq[:K].ljust(K, "N") + sq[-K:].rjust(K, "N")).encode()
+                        has_seq[r] = 1
     stats["reads_forward"] = len(names)
     stats["alignments_dropped_cigar"] = n_bad_cigar_aln
     stats["reads_cigar_ok"] = cigar_ok.count(1)
@@ -119,4 +156,8 @@ def read_bam(path, anno, stats, keep=None):
                      np.frombuffer(length, dtype=np.int32), len(names), list(names), ref, refs)
     log.info("%s: %d forward reads, %d with an acceptable alignment (%d alignments dropped for their CIGAR)",
              path, len(names), stats["reads_cigar_ok"], n_bad_cigar_aln)
-    return aln
+    if not with_ends:
+        return aln
+    seq = np.frombuffer(bytes(ends_seq), dtype=np.uint8).reshape(-1, 2 * K)
+    return aln, Ends(np.frombuffer(clip5, dtype=np.uint8), np.frombuffer(clip3, dtype=np.uint8), seq[:, :K],
+                     seq[:, K:])

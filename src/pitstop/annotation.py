@@ -91,15 +91,16 @@ def _tx_seq(fa, t):
     return revcomp(seq) if t["strand"] == "-" else seq
 
 
-def transcript_seqs(gtf, fasta, ids):
-    """{transcript_id: sequence, 5' to 3'} for those of `ids` that are in the GTF."""
-    txs = read_gtf(gtf)
+def transcript_seqs(gtf, fasta, ids, txs=None):
+    """{transcript_id: sequence, 5' to 3'} for those of `ids` that are in the GTF. txs: read_gtf(gtf), if done."""
+    txs = read_gtf(gtf) if txs is None else txs
     fa = _open_fasta(fasta)
     return {tid: _tx_seq(fa, txs[tid]) for tid in sorted(ids) if tid in txs}
 
 
-def load_annotation(gtf, fasta):
-    txs = read_gtf(gtf)
+def load_annotation(gtf, fasta, txs=None):
+    """txs: read_gtf(gtf), if done."""
+    txs = read_gtf(gtf) if txs is None else txs
     fa = _open_fasta(fasta)
     chroms = set(fa.references)
     stats = dict(transcripts=len(txs))
