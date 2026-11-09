@@ -24,11 +24,13 @@ A class per length, the first rule that holds:
   short state  SHORT nt, the start peak at SHORT_PEAK with MIN_ANCHOR reads or more, SHORT_CDS of the P-sites or more in
                the CDS: ribosomes with an open A site (not damaged footprints; repair does not touch them)
   clean        top frame CLEAN or more
+  two frames   the second phase MIXED of the top phase or more, and the third phase TWO_THIRD or less: two groups of
+               5' ends, 1 nt apart (any two phases are), and one offset puts the smaller group in the next frame
   no frame     else
-The class uses the frame in the CDS interior, as quant, orfs and score do. Mixed (a column apart from the class): a clean
-or no-frame length with MIN_ANCHOR reads or more at the start peak, and beside it MIXED of them or more (as `starts`):
-two groups of 5' ends at the starts, and one offset puts the smaller group 1 nt off. It matters for the start lengths
-of `starts` only.
+The class uses the frame in the CDS interior, as quant, orfs and score do. Mixed (a column apart from the class): a
+length with a frame class (clean, two frames, no frame), MIN_ANCHOR reads or more at the start peak, and beside it MIXED
+of them or more (as `starts`): two groups of 5' ends at the starts, and one offset puts the smaller group 1 nt off. It
+matters for the start lengths of `starts` only.
 The suggested read lengths: of the runs of consecutive clean lengths, the one with the most reads.
 
 Tables (<prefix>.<name>.tsv). The report (report/inspect.py) reads only these, so every number of the report is in a table.
@@ -73,6 +75,8 @@ log = logging.getLogger(__name__)
 K = bam.K            # positions from each read end in ends.tsv
 MIN_SHARE = 0.003    # a class also needs this share of the reads: a few positions can give a tiny length any frame
 CLEAN = 0.7          # clean: top frame this or more
+TWO_THIRD = 0.15     # two frames: the third phase this or less, (1 - CLEAN) / 2: what a clean length at the cut leaves
+                     # to each of its other phases
 DEFAULT_OFFSET = 12  # the offset of a length with fewer than MIN_ANCHOR reads at the start peak
 SHORT = (20, 22)     # the short state: these lengths,
 SHORT_PEAK = -12     # this start peak,
@@ -170,6 +174,14 @@ def peaks(prof, window, allowed):
     return (np.where(has, i + window[0], 0), at, np.where(has, beside / np.where(has, at, 1), np.nan), has)
 
 
+def two_frames(phases):
+    """Per row of phase counts: the second phase has MIXED of the top phase or more (as beside the start peak), and
+    the third phase TWO_THIRD of the reads or less."""
+    p = -np.sort(-phases, axis=1)
+    n = p.sum(axis=1)
+    return (n > 0) & (p[:, 1] >= MIXED * p[:, 0]) & (p[:, 2] <= TWO_THIRD * n)
+
+
 def length_table(pos5, length, ctx, lengths):
     """lengths.tsv's columns for one view of the alignments (pos5, length: int64 per alignment)."""
     lo, hi = lengths
@@ -202,9 +214,11 @@ def length_table(pos5, length, ctx, lengths):
         [(interior < MIN_FRAME) | (reads < MIN_SHARE * reads.sum()),
          (L >= SHORT[0]) & (L <= SHORT[1]) & (s_peak == SHORT_PEAK) & (s_at >= MIN_ANCHOR)
          & (np.nan_to_num(reg[:, CDS]) >= SHORT_CDS),
-         np.nan_to_num(top) >= CLEAN],
-        ["few reads", "short state", "clean"], "no frame")
-    mixed = np.isin(cls, ["clean", "no frame"]) & (s_at >= MIN_ANCHOR) & (np.nan_to_num(s_beside) >= MIXED)
+         np.nan_to_num(top) >= CLEAN,
+         two_frames(phases)],
+        ["few reads", "short state", "clean", "two frames"], "no frame")
+    mixed = (np.isin(cls, ["clean", "two frames", "no frame"]) & (s_at >= MIN_ANCHOR)
+             & (np.nan_to_num(s_beside) >= MIXED))
     out = pd.DataFrame({"length": L, "reads": reads, "share": reads / max(reads.sum(), 1e-300), "interior": interior})
     for f in range(3):
         out[f"phase{f}"] = share(phases[:, f], interior)
@@ -473,6 +487,8 @@ def summary(stats, aln, lengths_df, anchors_df, ends_df, cplx, reads_per_footpri
     s["classed_lengths"] = int((t["class"] != "few reads").sum())
     s["clean_share"] = share[t["class"] == "clean"].sum()
     s["clean_lengths"] = ",".join(str(x) for x in L[t["class"] == "clean"])
+    s["two_frame_share"] = share[t["class"] == "two frames"].sum()
+    s["two_frame_lengths"] = ",".join(str(x) for x in L[t["class"] == "two frames"])
     s["read_lengths"] = suggest(t)
     rep = t["reads_repaired"].to_numpy()
     s["clean_share_repaired"] = rep[t["class_repaired"] == "clean"].sum() / max(rep.sum(), 1e-300)

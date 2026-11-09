@@ -18,6 +18,13 @@ length needs 100 reads or more in the CDS interior and 0.3% of the reads or
 more to get a class. The 20-22 nt reads of the [short state](short-state.md)
 are not clean lengths.
 
+A length that is not clean has the class `two frames` if its reads are two
+groups of 5′ ends, 1 nt apart: the second phase has half of the top phase or
+more, and the third phase has 0.15 of the reads or less (a clean length at
+the cut leaves this much to each of its two other phases). Else its class
+is `no frame`. The report gives the share of the reads in lengths with two
+frames (`two_frame_share` in `summary.tsv`).
+
 | State | Cut |
 |---|---|
 | pass | clean share 0.5 or more |
@@ -46,6 +53,12 @@ are not clean lengths.
    - [End spike](end-spike.md) warns: trim the reads again.
    - [Under-digestion](under-digestion.md) fails or warns: no fix for this
      library.
+   - Most of the reads that are not clean are in lengths with two frames,
+     and untemplated 5′ nt does not fail: the 5′ ends of each length are in
+     two groups, 1 nt apart. No rule for each read tells the two groups
+     apart, so there is no fix for this library. At the start codons,
+     `pitstop starts` anchors a length that is split there too on the two
+     nucleotides ([mixed lengths](mixed-lengths.md)).
 2. If no other flag explains it, check the preprocessing: the adapter, and
    every nucleotide that the library kit adds to the insert ([Preparing the
    reads](../workflows/reads.md#before-the-alignment)).

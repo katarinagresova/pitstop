@@ -52,8 +52,8 @@ def test_classes(clean):
     _, out = clean
     t = out["lengths"]
     assert t.loc[21, "class"] == "short state"
-    # the class is the frame in the CDS: 27 nt splits its 5' ends everywhere (no frame), 29 nt only at the start codon
-    assert (t.loc[27, "class"], t.loc[29, "class"]) == ("no frame", "clean")
+    # the class is the frame in the CDS: 27 nt splits its 5' ends everywhere (two frames), 29 nt only at the start codon
+    assert (t.loc[27, "class"], t.loc[29, "class"]) == ("two frames", "clean")
     assert t.loc[27, "start_beside"] > 0.7 and t.loc[29, "start_beside"] >= inspect.MIXED
     assert list(t.loc[t["mixed"]].index) == [27, 29]
     assert list(t.loc[[28, 29], "class"]) == ["clean", "clean"]
@@ -62,6 +62,15 @@ def test_classes(clean):
     assert out["summary"]["read_lengths"] == "28-29"
     assert out["summary"]["mixed_lengths"] == "27,29"
     assert out["summary"]["flag_mixed_lengths"] == "info"
+    assert out["summary"]["two_frame_lengths"] == "27"
+    assert out["summary"]["two_frame_share"] == pytest.approx(t.loc[27, "share"], abs=1e-6)
+
+
+def test_two_frames():
+    # two groups (any two phases are 1 nt apart), a group under half of the top, a third phase above TWO_THIRD
+    phases = np.array([[50, 45, 5], [5, 40, 55], [60, 25, 15], [45, 30, 25], [70, 15, 15], [0, 0, 0],
+                       [50, 25, 10]], dtype=float)
+    assert inspect.two_frames(phases).tolist() == [True, True, False, False, False, False, True]
 
 
 def test_ends_at_starts_and_stops(clean):

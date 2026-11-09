@@ -5,7 +5,8 @@ neighbouring nucleotides.** The reads of ribosomes on the start codon then
 form two groups, 1 nt apart. A length has one offset, so it puts the smaller
 group's P-sites 1 nt off. At a start codon this matters: a start is tested in
 a window of a few nucleotides. In the CDS, the frame of the length shows how
-many of its reads are off.
+many of its reads are off. If the two groups are there too, the class of the
+length is `two frames` (`lengths.tsv`; [weak frame](weak-frame.md)).
 
 ## The value
 

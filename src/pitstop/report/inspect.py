@@ -25,9 +25,12 @@ HIDDEN = 0.005       # the next steps name the hidden added nt from this share
 DOCS = "https://katarinagresova.github.io/pitstop/flags/"   # a flag's page: DOCS + its name with "-" for "_"
 
 
-TEXT = (["library", "pitstop", "bam", "gtf", "fasta", "clean_lengths", "read_lengths", "clean_lengths_repaired",
-         "read_lengths_repaired", "mixed_lengths", "bias_max_at", "repair"] + [f"flag_{f}" for f in qc.FLAGS])
-CLASSES = (("clean", "clean"), ("short state", "short state"), ("no frame", "no frame"), ("few reads", "too few reads"))
+TEXT = (["library", "pitstop", "bam", "gtf", "fasta", "clean_lengths", "two_frame_lengths", "read_lengths",
+         "clean_lengths_repaired", "read_lengths_repaired", "mixed_lengths", "bias_max_at", "repair"]
+        + [f"flag_{f}" for f in qc.FLAGS])
+CLASSES = (("clean", "clean"), ("two frames", "two frames"), ("short state", "short state"), ("no frame", "no frame"),
+           ("few reads", "too few reads"))
+TWO_SWATCH = "repeating-linear-gradient(135deg, var(--k-clean) 0 2px, var(--surface) 2px 3.5px)"   # hatched k-clean
 SECTIONS = (("verdict", "Verdict and next steps"), ("reads", "The reads that pitstop reads"),
             ("depth", "Depth and complexity"), ("lengths", "Read lengths"), ("regions", "Regions per length"),
             ("frame", "Frame per length"), ("ends", "Ends at the annotated starts and stops"),
@@ -81,6 +84,8 @@ def lengths_chart(t, lib):
         kw = dict(width=0.78, linewidth=0.8, edgecolor=C["surface"])
         if cls == "clean":
             kw["color"] = C["k-clean"]
+        elif cls == "two frames":
+            kw.update(color=C["k-clean"], hatch="/////")
         elif cls == "short state":
             kw["color"] = C["k-short"]
         elif cls == "no frame":
@@ -297,9 +302,12 @@ def next_steps(s, t):
     else:
         best = "" if isna(s["best_length"]) else (f" The best top-phase share is "
                                                    f"{f2(s['best_top_frame'])} ({int(s['best_length'])} nt).")
+        two = int_list(s["two_frame_lengths"])
+        groups = "" if not two else (f" {f2(s['two_frame_share'])} of the reads are in lengths with two frames "
+                                     f"({span(two)} nt): two groups of 5′ ends, 1 nt apart.")
         out.append(("No read length has a clean frame.",
-                    f"No length reaches a top-phase share of {qc.CLEAN}.{best} The steps that use the frame (orfs, score, "
-                    "starts) will be weak on this library. The counts per CDS (quant) still work.", None))
+                    f"No length reaches a top-phase share of {qc.CLEAN}.{best}{groups} The steps that use the frame "
+                    "(orfs, score, starts) will be weak on this library. The counts per CDS (quant) still work.", None))
     if st["untemplated"] == "info":
         out.append(("No repair needed.", f"{pct(s['mismatch5'])} of the reads have a 5′ mismatch, and the aligner "
                     f"clipped it ({pct(s['clip5_share'])} have a 5′ soft clip). pitstop removes a 5′ clip.", None))
@@ -452,8 +460,8 @@ def inspect_report(prefix):
               f"{pct(s['disome_share'], 2)} of the reads are {qc.DISOME[0]}–{qc.DISOME[1]} nt (disomes). Expected in "
               "a disome library; in a monosome library they show how wide the size selection was.")
     shown_cls = [k for k, _ in CLASSES if (t["class"] == k).any()]
-    leg = legend([(None, "var(--k-clean)", "clean"), (None, "var(--k-short)", "short state"),
-                  (None, "var(--k-noframe)", "no frame"),
+    leg = legend([(None, "var(--k-clean)", "clean"), (None, TWO_SWATCH, "two frames"),
+                  (None, "var(--k-short)", "short state"), (None, "var(--k-noframe)", "no frame"),
                   ("few", None, "too few reads")][i] for i, (k, _) in enumerate(CLASSES) if k in shown_cls)
     lt = t_all[["length", "reads", "share", "class", "mixed", "top_frame", "start_peak", "offset"]]
     lengths = section("lengths", "Read lengths", (
@@ -465,7 +473,9 @@ def inspect_report(prefix):
                  (f"≤ {qc.SHORT_MAX} nt", pct(s["short_share"]), ""),
                  ("Clean share", f2(s["clean_share"]), f"lengths {span(int_list(s['clean_lengths']))}")])
         + fig_block("Reads per footprint length, by class", charts["lengths"],
-                    f"Clean: top-phase share {qc.CLEAN} or more in the CDS interior. Short state: "
+                    f"Clean: top-phase share {qc.CLEAN} or more in the CDS interior. Two frames: the second phase "
+                    f"has {qc.MIXED} of the top phase or more, and the third phase {qc.TWO_THIRD} of the reads or "
+                    "less: two groups of 5′ ends, 1 nt apart. Short state: "
                     f"{qc.SHORT[0]}–{qc.SHORT[1]} nt, "
                     f"the 5′ end at nt {nt(qc.SHORT_PEAK)}, and {qc.SHORT_CDS} of the P-sites or more in the CDS. No "
                     f"frame: none of these. Too few reads: fewer than {qc.MIN_FRAME} reads in the CDS interior, or less "
@@ -509,6 +519,12 @@ def inspect_report(prefix):
                                   f"{span(int_list(s['clean_lengths']))} nt."
                 + ("" if isna(s["best_length"]) else
                    f" The best top-phase share is {f2(s['best_top_frame'])} at {int(s['best_length'])} nt."))]
+    two = int_list(s["two_frame_lengths"])
+    if two:
+        fr_find.append(("info", f"Two frames: {span(two)} nt, {f2(s['two_frame_share'])} of the reads. The reads of "
+                                "these lengths are two groups of 5′ ends, 1 nt apart, so one offset puts the smaller "
+                                "group in the next frame. The suggested read lengths leave them out. The counts per "
+                                "CDS (quant) still work: a P-site that is off by 1 nt stays in the CDS."))
     if abs(s["clean_share_repaired"] - s["clean_share"]) >= CHANGED:
         fr_find.append(("info", f"After repair the clean share would be {f2(s['clean_share_repaired'])} "
                                 f"({span(int_list(s['clean_lengths_repaired']))} nt)."))
