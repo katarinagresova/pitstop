@@ -24,7 +24,7 @@ translation of these ORFs.
   for example harringtonine with puromycin and no elongation library: `starts`
   needs an elongation library for each initiation library.
 
-![The initiation and elongation workflow, one card per step. Step 2: pitstop inspect on each library writes inspect.html and lengths.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv writes catalogue.tsv and lengths.tsv. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
+![The initiation and elongation workflow, one card per step. Step 2: pitstop inspect on each library writes inspect.html and lengths.tsv, for the QC of each library and each pair; it guides the choice of read lengths. Step 3: pitstop quant on the pool's elongation libraries, merged, writes offsets.tsv. Step 4: pitstop orfs on each library, with no ORF table and these offsets, writes psites.tsv. Step 5: pitstop starts --scan with libraries.tsv writes catalogue.tsv and starts.html, the report. Step 6: pitstop orfs --orfs with the catalogue and the pool offsets on each elongation library, then pitstop score, writes orfs.tsv and scores.tsv.](../img/workflow-initiation.svg)
 
 `orfs` runs two times. The first run, with no ORF table, gives the P-sites
 that `starts` reads. The second run counts the reads of the ORFs that `starts`
@@ -80,7 +80,8 @@ pairs of a different digestion 0.59-0.74. If the initiation library peaks
 several nt longer (for example at 31-32 nt against 28 nt), it was digested
 less, and its flag [under-digestion](../flags/under-digestion.md) fails or
 warns. Pair it with an elongation library of the same digestion if you have
-one, or leave the pair out.
+one, or leave the pair out. `starts` checks each pair of its sheet again, in
+its report (step 5).
 
 ### 3. Pool offsets
 
@@ -133,11 +134,19 @@ and calls the starts with q < 0.05. `--start-codons ATG,CTG` tests fewer
 codons, `--fdr` sets the cut, and `--orfs table.tsv` tests the starts of a
 given table instead.
 
-Before you use the calls, look at the read-length QC: `lengths.tsv` and
-`profiles.tsv` ([Usage](../usage.md#start-sites-starts)). A start length has most
-of its P-sites in one frame and a peak at nt 0 of the annotated starts. Only
-the start lengths count. If no length passes, `starts` stops; if the chosen
-lengths look wrong, give them with `--start-lengths`.
+Before you use the calls, read the report, `out/starts.starts.html`
+([Usage](../usage.md#the-report-of-starts)):
+
+- **Pairs**: each initiation library has the read lengths of its elongation
+  library (the same digestion), and a higher start peak (the drug worked). A
+  pair that fails gives its initiation library a wrong background: change
+  the sheet, and run `starts` again.
+- **Start lengths**: only the start lengths count. A start length has most
+  of its P-sites in one frame and a peak at nt 0 of the annotated starts. If
+  no length passes, `starts` stops, and its report says why; if the chosen
+  lengths look wrong, give them with `--start-lengths`.
+- **Calls**: the false calls that the null windows expect per class, and the
+  start codons of the calls against those of the tests.
 
 ### 6. Counts and frame evidence of the new ORFs
 

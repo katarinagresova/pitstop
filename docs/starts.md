@@ -129,8 +129,8 @@ and calibrated, its move, its offset (the pool's offset plus the move), and
 the verdict (`pass`, or why not). `profiles.tsv` has the profiles behind it:
 per library and length, the P-sites around the annotated starts and stop
 codons and along the CDSs, from the pool's offsets, before the calibration.
-Look at both ([Usage](usage.md#start-sites-starts)) before you trust the start
-lengths: a length that the calibration moves peaks at -1 or +1 in its
+The report (`starts.html`, [Usage](usage.md#the-report-of-starts)) draws both:
+look at it before you trust the start lengths: a length that the calibration moves peaks at -1 or +1 in its
 library's profile, and its row gives its offset and the move; a mixed length
 has two nt with about the same P-sites at its peak (`beside_peak` close to
 `at_peak`).

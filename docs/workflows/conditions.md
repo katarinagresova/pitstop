@@ -26,7 +26,7 @@ own ORF table.
   ([Love et al. 2014](#references)), as deltaTE does for translation
   efficiency ([Chothani et al. 2019](#references)).
 
-![The workflow for comparing conditions, one card per step. Step 2: pitstop inspect on every library writes inspect.html, and pitstop quant on each elongation library writes quant.tsv. Step 3: one pitstop starts --scan run with a pool per condition (or your own ORF table) writes catalogue.tsv. Step 4: pitstop quant on all elongation libraries merged writes offsets.tsv. Step 5: pitstop orfs --orfs on each elongation library, with the catalogue and these offsets, writes orfs.tsv. Step 6: pitstop score on all libraries of both conditions writes scores.tsv. Step 7, outside pitstop: your tests, for example with DESeq2 or deltaTE, take quant.tsv, orfs.tsv and scores.tsv.](../img/workflow-conditions.svg)
+![The workflow for comparing conditions, one card per step. Step 2: pitstop inspect on every library writes inspect.html, and pitstop quant on each elongation library writes quant.tsv. Step 3: one pitstop starts --scan run with a pool per condition (or your own ORF table) writes catalogue.tsv and starts.html, the report. Step 4: pitstop quant on all elongation libraries merged writes offsets.tsv. Step 5: pitstop orfs --orfs on each elongation library, with the catalogue and these offsets, writes orfs.tsv. Step 6: pitstop score on all libraries of both conditions writes scores.tsv. Step 7, outside pitstop: your tests, for example with DESeq2 or deltaTE, take quant.tsv, orfs.tsv and scores.tsv.](../img/workflow-conditions.svg)
 
 ## Three rules
 

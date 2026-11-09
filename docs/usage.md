@@ -251,21 +251,60 @@ starts with BH q < 0.05; `--start-codons ATG,CTG` tests only these codons and
 table instead (columns `ORF_id Name start`). The annotated starts are always
 tested. Only the start lengths count: by default the read lengths that pass a
 QC in 24-34 nt (`--length-window`), or those of `--start-lengths LO-HI`. How
-it works and how to read it: [Start sites](starts.md).
+it works and how to read it: [Start sites](starts.md). Read the report
+([below](#the-report-of-starts)) before you use the calls.
 
 | Output | Content |
 |---|---|
+| `<prefix>.starts.html` | the report ([below](#the-report-of-starts)) |
 | `<prefix>.starts.tsv` | one row per tested start: `Name start codon region frame ORF_id harringtonine elongation expected enrichment p typical_p q multimapped shoulder`. `harringtonine` and `elongation` are the P-sites in the start's window (nt -1 to +2 of the start codon), summed over the replicates and pools; `expected` is the harringtonine P-sites that the elongation profile predicts there; `q` is BH per class (annotated starts; other starts per region: 5′ UTR, CDS, 3′ UTR, transcript without a CDS); `typical_p` is the p the window would have with the reads of a typical used start; `multimapped` is the share of the window's reads with another alignment; `shoulder` is log2 harringtonine / elongation P-sites (+1 each) in the codons 1-5 after the start, minus the same in the 5 codons before its window (a used start raises its codons 1-5; not part of the test). With `--scan` also `called stopped_by end type`. |
 | `<prefix>.start_orfs.tsv` | with `--scan`: the ORF of each called start, to its first in-frame stop, but the annotated CDSs: `ORF_id Name start end type start_codon` and the start evidence. `ORF_id` is `<transcript>_<1-based start>`. `type` is `uORF`, `uoORF`, `extension` (in frame upstream of the CDS), `truncation` (in frame inside it), `internal` (out of frame inside it), `dORF` (after it) or `other` (no annotated CDS). An ORF table for `pitstop orfs --orfs`. |
 | `<prefix>.catalogue.tsv` | with `--scan`: the uORFs and uoORFs of the called starts, and every annotated CDS with its start evidence; the columns of `start_orfs.tsv`. An ORF table for `pitstop orfs --orfs`. |
-| `<prefix>.lengths.tsv` | the QC of the read lengths, per library and read length: `library pool kind length psites share 5UTR CDS 3UTR transcript frame0 frame1 frame2 top_frame periodic start_peak at_peak beside_peak mixed calibrated shift offset qc start_length`. `psites` are its P-sites, `share` their share of the library's, `5UTR`-`transcript` the same per region; `frame0-2` are its P-sites per CDS frame, 15 nt or more inside the CDSs, and `top_frame` the share of the top frame; `periodic`: 100 of these P-sites or more and `top_frame` 0.4 or more. `start_peak` is the nt (-15 to +32 from the annotated starts) where its P-sites peak, `at_peak` their number there, `beside_peak` the number at the larger of the two nt beside it; `mixed`: `beside_peak` is half of `at_peak` or more (two offsets). `shift` is the nt its P-sites move, and `offset` the offset they end at: nt from the 5' end to the P-site, the `orfs` run's offset plus `shift`. `qc` is the verdict on the length, `pass` or why not ([start lengths](starts.md#1-calibration-and-start-lengths)). It is written before the test, also when no length passes. |
+| `<prefix>.lengths.tsv` | the QC of the read lengths, per library and read length: `library pool kind length psites share 5UTR CDS 3UTR transcript frame0 frame1 frame2 interior_share top_frame periodic start_peak at_peak beside_peak beside_nt beside_share mixed calibrated shift offset qc start_length`. `psites` are its P-sites, `share` their share of the library's, `5UTR`-`transcript` the same per region; `frame0-2` are its P-sites per CDS frame, 15 nt or more inside the CDSs, `interior_share` their share of the library's such P-sites, and `top_frame` the share of the top frame; `periodic`: 100 of these P-sites or more and `top_frame` 0.4 or more. `start_peak` is the nt (-15 to +32 from the annotated starts) where its P-sites peak, `at_peak` their number there, `beside_peak` the number at the larger of the two nt beside it, `beside_nt` that nt and `beside_share` `beside_peak / at_peak`; `mixed`: `beside_share` is 0.5 or more, with 20 P-sites or more at the peak (two offsets). `shift` is the nt its P-sites move, and `offset` the offset they end at: nt from the 5' end to the P-site, the `orfs` run's offset plus `shift`. `qc` is the verdict on the length, `pass` or why not ([start lengths](starts.md#1-calibration-and-start-lengths)). It is written before the test, also when no length passes. |
 | `<prefix>.profiles.tsv` | the profiles behind `lengths.tsv`, per library and read length, from the pool's offsets, before the calibration: `library length anchor x frame psites`. `anchor` `start`: P-sites at nt `x` (-15 to +62) from the annotated starts; `stop`: at nt `x` (-45 to +14) from the first nt of the stop codons; `cds`: in bin `x` of 20 along the CDSs. `frame` is the frame of the CDS. |
+| `<prefix>.pairs.tsv` | one row per row of `--libraries` (a pair): `pool harringtonine elongation distance`. `distance` is the read-length distance of the two libraries: half the summed absolute difference of their `interior_share` per length (0: the same lengths; 1: none in common). Pairs of one digestion are below 0.3. Written also when no length passes. |
+| `<prefix>.libraries.tsv` | per library, the P-sites of the start lengths after the calibration: `library pool kind psites start_psites start_share 5UTR CDS 3UTR transcript interior frame0 frame1 frame2 at_start start_enrichment`. `start_share` is `start_psites / psites`; `5UTR`-`transcript` their shares per region; `interior` those 15 nt or more inside the CDSs, `frame0-2` their shares per frame; `at_start` the P-sites at the first nt of the annotated start codons, and `start_enrichment` the start peak: `at_start` per annotated start over the P-sites per in-frame codon inside the CDSs. |
+| `<prefix>.start_codons.tsv` | per class (`annotated`, `5UTR`, `CDS`, `3UTR`, `transcript`) and start codon: `class codon tests test_share called call_share`. `tests` are the start codons the class tests (with `--scan`, all of the class, also those without harringtonine reads), `called` the calls (with `--scan`, `called` of `starts.tsv`; else q below `--fdr`), and the shares are of the class's. |
 | `<prefix>.kernel.tsv` | per pool, read length and nt from the annotated start (-15 to +32): harringtonine and elongation P-sites (after the calibration), and the kernel (harringtonine minus scaled elongation, as a share). |
 | `<prefix>.factors.tsv` | per pool: the harringtonine / elongation factor of each bin of region and distance. |
-| `<prefix>.starts_stats.tsv` | the length window, the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. With `--scan`, the overdispersion is the second one, and `null_windows_near_called` is the number of null windows dropped near the starts of the first call. |
+| `<prefix>.starts_stats.tsv` | the inputs (`pitstop`, the version; the file names of `libraries_sheet gtf fasta`; `candidates_from`, `scan` or the ORF table; `fdr`; `start_lengths_given`), the length window, the start lengths, P-site totals, the prior and overdispersion per region, and per class the tests, the calls and the false calls expected from null windows. With `--scan`, the overdispersion is the second one, and `null_windows_near_called` is the number of null windows dropped near the starts of the first call. |
 
-What to look for in `lengths.tsv` and `profiles.tsv`: a start length has most
-of its P-sites in frame 0, a peak at nt 0 of the annotated starts (after its
-move), and in an elongation library a peak 3 nt before the stop codon. In a
-harringtonine library, the profile along the CDS climbs from the 5' end (the
-ribosomes there ran off) and the stop peak is low.
+### The report of `starts`
+
+`<prefix>.starts.html` is one file, as the report of `inspect`: no other
+file, no network, the light or dark theme of the browser, each number also in
+a table, and a byte-identical rerun. `starts` writes it also when no read
+length passes the QC, before it stops, so the report says why.
+
+The sections before **Pair detail** are for the whole run; the less
+important parts of a section are folded until you open them.
+
+- **Verdict and next steps**: the checks of the run, and what to do about
+  each.
+- **Calls**: per class the tests, the calls and the false calls that the null
+  windows expect; with `--scan`, the ORFs of the called starts by type; the
+  start codons of the calls against those of the tests (real starts are rich
+  in ATG, then CTG and GTG; calls whose codons look like the tests are mostly
+  noise: restrict `--start-codons`, or lower `--fdr`).
+- **Pairs**: a pair is a row of `--libraries`. Its two libraries must have
+  the same digestion: the read-length distance of their P-sites inside the
+  CDS is below 0.3 (initiation libraries digested to longer reads were at
+  0.59-0.74 from their elongation libraries). And the drug must work: the initiation library has the higher
+  start peak. A pair that fails either check gives a wrong background to its
+  initiation library: pair it with an elongation library of the same
+  digestion, or leave it out.
+- **Start lengths**: the QC verdict on each read length in the window. A
+  start length has most of its P-sites in frame 0 and a peak at nt 0 of the
+  annotated starts. Folded, per pool: the P-sites per length of each library
+  (the start lengths dark, mixed lengths hatched, the offset above each bar),
+  with the regions and frames of the start-length P-sites; and the
+  harringtonine minus the elongation P-sites around the annotated starts,
+  per length (where the drug works and the offset is right, most of a row is
+  at nt 0).
+- **Pair detail**: one pair at a time, chosen in the list at its top (the
+  list stays in view as you scroll). The read lengths of the two libraries
+  and their frames per read length; the P-sites of each start length at the
+  annotated starts, initiation above and elongation below, each with its own
+  scale. Folded: the other read lengths, the numbers per read length, the
+  stop codons, and the P-sites along the CDS (in an initiation library they
+  climb from the 5' end, where the ribosomes ran off).
