@@ -237,7 +237,7 @@ def test_starts_report_sections(started):
     titles = re.findall(r'<h2 id="t-[^"]+">([^<]+)</h2>', starts_page(started["dir"] / "scan"))
     assert titles == ["Verdict and next steps", "Calls", "Pairs", "Start lengths", "Pair detail", "Not in this report"]
     assert "Per pool: harringtonine at the annotated starts" in text
-    assert "Start lengths: 28–30 nt." in text and "Every pair has a read-length distance below 0.3" in text
+    assert "Start lengths: 28–30 nt." in text and "Every pair has a read-length distance below 0.4" in text
     assert "In every pair the initiation library has the higher start peak." in text
     assert "5′ UTR: ATG is" in text and "catalogue.tsv has the uORFs" in text
     assert "pitstop starts --libraries sheet.tsv --gtf annotation.gtf --fasta genome.fa --scan --out-prefix scan" in text
@@ -295,5 +295,5 @@ def test_starts_bad_pairs(bad_pairs):
 
 def test_distance_near_the_cut():
     # a distance that 2 decimals would round onto the cut shows 4, so a pass never reads as the cut
-    assert report.starts.dist(0.29991) == "0.2999" and report.starts.dist(0.31) == "0.31"
-    assert report.starts.dist(starts.PAIR_DISTANCE) == "0.30" and report.starts.dist(0.1) == "0.10"
+    assert report.starts.dist(0.39991) == "0.3999" and report.starts.dist(0.41) == "0.41"
+    assert report.starts.dist(starts.PAIR_DISTANCE) == "0.40" and report.starts.dist(0.1) == "0.10"

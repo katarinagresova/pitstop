@@ -108,8 +108,8 @@ LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "5UTR"
 LIBRARY_COLUMNS = ["library", "pool", "kind", "psites", "start_psites", "start_share", "5UTR", "CDS", "3UTR",
                    "transcript", "interior", "frame0", "frame1", "frame2", "at_start", "start_enrichment"]
 PAIR_COLUMNS = ["pool", "harringtonine", "elongation", "distance"]
-PAIR_DISTANCE = 0.3  # pairs: a read-length distance this large or larger means another digestion (pairs of
-                     # another digestion were at 0.59-0.74)
+PAIR_DISTANCE = 0.4  # pairs: a read-length distance this large or larger means another digestion (pairs of one
+                     # digestion were at 0.01-0.33, pairs of another digestion at 0.56-0.78)
 CODON_COLUMNS = ["class", "codon", "tests", "test_share", "called", "call_share"]
 STARTS_COLUMNS = ["Name", "start", "codon", "region", "frame", "ORF_id", "harringtonine", "elongation", "expected",
                   "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
