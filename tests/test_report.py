@@ -8,9 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pitstop import inspect, report
+from pitstop import inspect, report, starts
 
-from synth import make_inspect_dataset
+from synth import make_inspect_dataset, make_start_dataset
+from test_starts import pool_sheet
 
 MQC = ("inspect_general_mqc.json", "inspect_lengths_mqc.json", "inspect_frame_mqc.json")
 
@@ -180,3 +181,119 @@ def test_complexity_at_depth(runs, tmp_path, monkeypatch):
     assert not {t for t in tokens if t.rstrip(",") not in allowed and t.rstrip(",") not in strings}
     general = json.load(open(f"{prefix}.inspect_general_mqc.json"))
     assert general["data"]["lib"]["distinct_share_at_depth"] == pytest.approx(s["distinct_share_at_depth"], abs=1e-4)
+
+
+# ---------- the report of starts ----------
+
+START_TABLES = ("starts_stats", "lengths", "libraries", "pairs", "start_codons")
+
+
+@pytest.fixture(scope="module")
+def started(tmp_path_factory):
+    """starts on synthetic pairs: with an ORF table (s), a scan (scan), and a window without a length (fail: no start
+    lengths, the run stops after its report)."""
+    d = tmp_path_factory.mktemp("startreport")
+    data = make_start_dataset(d)
+    sheet = pool_sheet(d, data)
+    args = (str(sheet), str(data["gtf"]), str(data["fasta"]))
+    starts.run(*args, str(d / "s"), str(data["orfs"]))
+    starts.run(*args, str(d / "scan"), scan=True)
+    with pytest.raises(ValueError, match="no read length passes the QC"):
+        starts.run(*args, str(d / "fail"), str(data["orfs"]), window=(31, 34))
+    return dict(dir=d, data=data, sheet=sheet, args=args)
+
+
+def starts_page(prefix):
+    with open(f"{prefix}.starts.html", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("name", ["s", "scan", "fail"])
+def test_starts_every_number_is_in_a_table(started, name):
+    prefix = started["dir"] / name
+    allowed, strings = allowed_numbers(prefix, START_TABLES, (starts, report.starts, report.base))
+    text = visible_text(starts_page(prefix)).replace("−", "-")
+    tokens = re.findall(r"(?<![\w.\-])-?\d[\d,]*(?:\.\d+)?(?![\w])", text)
+    missing = {t for t in tokens if t.rstrip(",") not in allowed and t.rstrip(",") not in strings}
+    assert not missing
+
+
+def test_starts_rerun_is_byte_identical(started, tmp_path):
+    d = started["dir"]
+    starts.run(*started["args"], str(tmp_path / "scan"), scan=True)
+    assert filecmp.cmp(d / "scan.starts.html", tmp_path / "scan.starts.html", shallow=False)
+
+
+def test_starts_no_paths_and_no_network(started):
+    for name in ("s", "scan", "fail"):
+        doc = starts_page(started["dir"] / name)
+        assert str(started["dir"]) not in doc and str(started["data"]["gtf"].parent) not in doc
+        assert not re.search(r"(src|href)=\"https?:", doc)          # loads nothing, links nowhere
+        assert "harringtonine1" in doc and "annotation.gtf" in doc     # file names only
+
+
+def test_starts_report_sections(started):
+    text = visible_text(starts_page(started["dir"] / "scan"))
+    titles = re.findall(r'<h2 id="t-[^"]+">([^<]+)</h2>', starts_page(started["dir"] / "scan"))
+    assert titles == ["Verdict and next steps", "Calls", "Pairs", "Start lengths", "Pair detail", "Not in this report"]
+    assert "Per pool: harringtonine at the annotated starts" in text
+    assert "Start lengths: 28–30 nt." in text and "Every pair has a read-length distance below 0.3" in text
+    assert "In every pair the initiation library has the higher start peak." in text
+    assert "5′ UTR: ATG is" in text and "catalogue.tsv has the uORFs" in text
+    assert "pitstop starts --libraries sheet.tsv --gtf annotation.gtf --fasta genome.fa --scan --out-prefix scan" in text
+
+
+def test_starts_pair_picker(started):
+    doc = starts_page(started["dir"] / "scan")
+    options = re.findall(r'<option value="(pair-\d+)"', doc)
+    panels = re.findall(r'<div class="libpanel" id="(pair-\d+)"[^>]*?( hidden)?>', doc)
+    assert len(options) == len(panels) == 2 and options == [p for p, _ in panels]
+    assert [h for _, h in panels] == ["", " hidden"]                  # the first pair shows
+    assert doc.index('id="pair-pick"') < doc.index('id="pair-0"')    # the picker is above the panels it controls
+    assert re.findall(r'data-pair="(pair-\d+)"', doc) == options     # the side bar picks the same pairs
+    figures = re.findall(r"<svg role=\"img\".*?</svg>", doc, flags=re.S)
+    for fig in figures:
+        assert not re.search(r"#[0-9a-fA-F]{6}\b", fig) and "var(--" in fig
+    ids = re.findall(r'\bid="([^"]+)"', doc)
+    assert len(ids) == len(set(ids))
+
+
+def test_starts_report_when_qc_fails(started):
+    text = visible_text(starts_page(started["dir"] / "fail"))
+    assert "No read length passes the QC, so starts stopped." in text and "--start-lengths LO-HI" in text
+    assert "not computed, no start lengths." in text and "No calls: no start lengths." in text
+    assert "Read-length distance" in text                              # the pairs do not need start lengths
+
+
+@pytest.fixture(scope="module")
+def bad_pairs(started, tmp_path_factory):
+    """The scan's tables with pair 2 of another digestion and pair 1 without a harringtonine effect, and the report
+    drawn from them."""
+    src = started["dir"] / "scan"
+    prefix = tmp_path_factory.mktemp("bad_pairs") / "scan"
+    for name in ("starts_stats", "lengths", "profiles", "libraries", "pairs", "kernel", "start_codons"):
+        df = pd.read_csv(f"{src}.{name}.tsv", sep="\t", dtype=str, keep_default_na=False)
+        if name == "pairs":
+            df.loc[1, "distance"] = "0.6123"
+        if name == "libraries":
+            harr = df["library"].str.endswith("harringtonine1")
+            df.loc[harr, "start_enrichment"] = "1.5"
+        df.to_csv(f"{prefix}.{name}.tsv", sep="\t", index=False)
+    report.starts_report(str(prefix))
+    return prefix
+
+
+def test_starts_bad_pairs(bad_pairs):
+    text = visible_text(starts_page(bad_pairs))
+    assert "Check the pairs of another digestion: A · pair 2." in text and "Read-length distance 0.61:" in text
+    assert "Harringtonine did not raise the start peak: A · pair 1." in text
+    assert "harringtonine did not raise it. Leave the pair out, or make the library again." in text
+    allowed, strings = allowed_numbers(bad_pairs, START_TABLES, (starts, report.starts, report.base))
+    tokens = re.findall(r"(?<![\w.\-])-?\d[\d,]*(?:\.\d+)?(?![\w])", text.replace("−", "-"))
+    assert not {t for t in tokens if t.rstrip(",") not in allowed and t.rstrip(",") not in strings}
+
+
+def test_distance_near_the_cut():
+    # a distance that 2 decimals would round onto the cut shows 4, so a pass never reads as the cut
+    assert report.starts.dist(0.29991) == "0.2999" and report.starts.dist(0.31) == "0.31"
+    assert report.starts.dist(starts.PAIR_DISTANCE) == "0.30" and report.starts.dist(0.1) == "0.10"

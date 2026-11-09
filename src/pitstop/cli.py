@@ -89,8 +89,8 @@ def main(argv=None):
                             "and write their ORFs (<prefix>.start_orfs.tsv) and the catalogue: their uORFs and uoORFs "
                             "and the annotated CDSs (<prefix>.catalogue.tsv)")
     t.add_argument("--out-prefix", required=True,
-                   help="writes <prefix>.starts.tsv, .lengths.tsv, .profiles.tsv, .kernel.tsv, .factors.tsv, "
-                        ".starts_stats.tsv")
+                   help="writes <prefix>.starts.html (the report), .starts.tsv, .lengths.tsv, .profiles.tsv, "
+                        ".libraries.tsv, .kernel.tsv, .factors.tsv, .starts_stats.tsv")
     t.add_argument("--start-lengths", type=read_lengths, metavar="LO-HI",
                    help="read lengths that count (default: those that pass the QC in --length-window: their P-sites "
                         "peak within 2 nt of the annotated starts in every harringtonine library, and have a clear "

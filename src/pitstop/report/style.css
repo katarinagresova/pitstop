@@ -84,6 +84,7 @@ figure .ft { font-weight: 600; font-size: 13.5px; margin-bottom: 6px; }
 .sw.ring { border-radius: 50%; border: 2px solid var(--ink); background: var(--surface); }
 .sw.line { width: 16px; height: 0; border-top: 2px dashed var(--ink2); border-radius: 0; }
 .figrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.figrow.fill { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 details.tbl { margin-top: 8px; font-size: 12.5px; }
 details.tbl summary { cursor: pointer; color: var(--ink2); }
 details.tbl .scroll { margin-top: 6px; max-height: 340px; overflow: auto; }
@@ -96,4 +97,22 @@ details.tbl td, details.tbl th { padding: 3px 8px; white-space: nowrap; }
 .bias td.hi { font-weight: 700; }
 .scope { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 80ch; }
 footer { border-top: 1px solid var(--border); padding-top: 14px; font-size: 12.5px; color: var(--ink2); display: flex; flex-direction: column; gap: 4px; }
+.pairbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--border); }
+.pairbar label { font-weight: 600; font-size: 13.5px; }
+.pairbar select { font: inherit; font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+.pairbar button { font: inherit; font-size: 14px; line-height: 1; color: var(--ink); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.pairbar button:hover { background: var(--wash); }
+.pairbar span { font-size: 12.5px; color: var(--muted); }
+.libpanel { display: flex; flex-direction: column; gap: 10px; }
+table.len td, table.len th { padding: 5px 7px; white-space: nowrap; }
+table.len td:last-child { white-space: normal; }
+table.len th.grp { text-align: center; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--ink2); border-bottom: 1px solid var(--border); }
+table.len tbody td { color: var(--ink2); }
+table.len tr.on td { color: var(--ink); font-weight: 600; }
+details.more { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 10px 14px; }
+details.more > summary { cursor: pointer; color: var(--ink); font-weight: 600; font-size: 13.5px; }
+details.more > summary ~ * { margin-top: 12px; }
+details.more figure, details.more .panel { background: var(--surface); }
+.narrow { max-width: 560px; }
+.libpanel h3 { margin: 0; font-family: var(--mono); font-size: 15px; word-break: break-all; }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }

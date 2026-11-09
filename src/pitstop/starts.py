@@ -30,7 +30,7 @@ codons per start, over the P-sites per in-frame codon inside the CDSs),
 <prefix>.pairs.tsv the read-length distance of each pair (a row of the sheet): half the summed absolute difference
 of the two libraries' shares of CDS-interior P-sites per read length (0: the same lengths, 1: none in common; another
 digestion at PAIR_DISTANCE or more), <prefix>.start_codons.tsv the start codons of the tests and of the calls per
-class.
+class. The report (report/starts.py, <prefix>.starts.html) reads only the tables.
 
 Background, per pool. The harringtonine / elongation ratio depends on the region, and in the CDS on
 the distance from the start (run-off). h = s_t f_b e: a factor per bin of region and distance (BINS),
@@ -665,11 +665,13 @@ def write_stats(st, out_prefix):
 
 
 def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_lengths=None, start_codons=None,
-        fdr=FDR, window=WINDOW):
+        fdr=FDR, window=WINDOW, report=True):
     """Start evidence from the `pitstop orfs` runs of a library sheet (TSV pool, harringtonine, elongation:
     out prefixes, one row per replicate), for the starts of an ORF table and the annotated starts, or for every
     start codon (of `start_codons`, default START_CODONS) with harringtonine reads (scan: also the starts called
-    at q < fdr and their ORFs). start_lengths (lo, hi): the read lengths that count; default: the QC's, in `window`."""
+    at q < fdr and their ORFs). start_lengths (lo, hi): the read lengths that count; default: the QC's, in `window`.
+    report: also <out_prefix>.starts.html (report/starts.py), from the tables only; also when no read length passes the QC,
+    before the error."""
     if (orfs_path is None) == (not scan):
         raise ValueError("give an ORF table or scan, not both")
     if start_codons is not None and not scan:
@@ -740,6 +742,9 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     if not start_lengths:
         st["start_lengths"] = ""
         write_stats(st, out_prefix)
+        if report:
+            from . import report as rpt
+            rpt.starts_report(out_prefix)
         raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated and not "
                          f"mixed in every harringtonine library, a clear frame in every library): see "
                          f"{out_prefix}.lengths.tsv, or choose them with --start-lengths")
@@ -910,4 +915,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     pd.concat(kern_rows, ignore_index=True).to_csv(f"{out_prefix}.kernel.tsv", sep="\t", index=False)
     pd.concat(factors, ignore_index=True).to_csv(f"{out_prefix}.factors.tsv", sep="\t", index=False)
     write_stats(st, out_prefix)
+    if report:
+        from . import report as rpt
+        rpt.starts_report(out_prefix)
     return out, st
