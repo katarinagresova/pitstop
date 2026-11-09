@@ -131,7 +131,7 @@ done
 ```
 
 `orfs.tsv` has the reads of each ORF and of each annotated CDS, and of the
-parts of each transcript in no ORF (`<transcript>:leader`, `:trailer`). Every
+parts of each transcript in no ORF (`<transcript>:5UTR`, `:3UTR`). Every
 P-site keeps its reading frame.
 
 ### 6. Frame evidence
@@ -152,13 +152,13 @@ lengths.
 | Question | Table | Column |
 |---|---|---|
 | CDS translation, differential translation | `quant.tsv` | `NumReads` |
-| Reads per ORF, per leader and trailer | `orfs.tsv` | `NumReads` |
+| Reads per ORF, per 5′ UTR and 3′ UTR | `orfs.tsv` | `NumReads` |
 | Is the ORF translated in its frame? | `scores.tsv` | `q`, and the group: called, not called, cannot be called |
 
 ## Notes
 
 - **For CDSs, use `quant`.** `orfs.tsv` has the CDSs too, but the ORFs and the
-  leaders and trailers take some of their reads.
+  5′ UTRs and 3′ UTRs take some of their reads.
 - **"Not called" is not "not translated".** Most short ORFs have too few
   codons with reads to pass at any depth. `scores.tsv` sorts every ORF into
   called, not called and cannot be called: [Reading the

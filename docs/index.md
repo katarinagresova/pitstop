@@ -101,7 +101,7 @@ simulation alone.
 
 1. **ORF table.** uORFs, uoORFs and other ORFs besides the CDS, in transcript
    coordinates; dropped if not a multiple of 3 or no stop follows. Positions
-   in no ORF form per-transcript leader/trailer/whole-transcript components.
+   in no ORF form per-transcript 5′ UTR/3′ UTR/whole-transcript components.
    Alignments to BAM references that are not in the GTF are dropped.
 2. **Frame-true P-sites.** One offset per read length (no phase snapping), so
    every P-site keeps its reading frame, plus a per-length frame profile from
@@ -119,7 +119,7 @@ simulation alone.
 1. **Start lengths.** The read lengths whose harringtonine P-sites peak on
    the first nt of the annotated start codons in every library.
 2. **Background.** The elongation P-sites times a harringtonine factor per
-   region (leader, CDS, trailer) and distance from the CDS start, and a
+   region (5′ UTR, CDS, 3′ UTR) and distance from the CDS start, and a
    scale per transcript, fit on null codons: positions with no start codon
    within 8 nt.
 3. **The test.** Per start, the harringtonine P-sites in nt -1 to +2 of its

@@ -24,7 +24,7 @@ not a trim problem.
 | fail | 1.7 nt or more |
 | unknown | fewer than 1,000 reads at the peak |
 
-A GTF without leaders gives unknown: no read starts before the start codon.
+A GTF without 5′ UTRs gives unknown: no read starts before the start codon.
 
 ## Why the cut is there
 

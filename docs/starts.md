@@ -20,7 +20,7 @@ run off the mRNA. After a few minutes, footprints pile up on start codons
 make harringtonine footprints:
 
 - **Run-off is not complete.** Ribosomes far into a long CDS have not run off
-  yet, so the harringtonine / elongation ratio grows along the CDS. Leaders
+  yet, so the harringtonine / elongation ratio grows along the CDS. 5′ UTRs
   have a higher ratio than CDSs.
 - **Codons 1-10 after a start are raised.** Ribosomes that made a few peptide
   bonds before the drug acted stay there: 4-8x at codons 1-5, about 3x at
@@ -161,9 +161,9 @@ $$
 $$
 
 - $\lambda$ is the window's elongation rate (step 4).
-- $f_b$ is a factor per **bin** of region and distance: leaders by nt
+- $f_b$ is a factor per **bin** of region and distance: 5′ UTRs by nt
   before the CDS start (0, 30, 100, 300 and more), the CDS by codon from its
-  start (0, 20, 50, 100, 200, 400, 700, 1,000 and more), trailers by nt after
+  start (0, 20, 50, 100, 200, 400, 700, 1,000 and more), 3′ UTRs by nt after
   the stop codon, and transcripts without an annotated CDS.
 - $s_t$ is a scale per transcript: harringtonine against elongation reads
   differ between transcripts.
@@ -181,7 +181,7 @@ its positions but the windows and codons 1-10 of annotated starts.
 Write $R = s_t f_b$, $h$ and $e$ for the harringtonine and elongation P-sites
 in the window. The window's elongation rate has a gamma prior. Its mean
 $\lambda_0$ is the elongation density of the window's nt in their transcript:
-per zone (leader, CDS frame 0, 1 and 2, trailer), as a window of 4 nt holds
+per zone (5′ UTR, CDS frame 0, 1 and 2, 3′ UTR), as a window of 4 nt holds
 one or two frame-0 nt of a CDS. Its shape $a$ is fit per region on the null
 windows. Then
 
@@ -200,7 +200,7 @@ an elongation peak (a pause) from being shrunk, so a pause is not called.
   $p \le 0.01$. A scan calibrates it twice ([section 5](#5-the-scan)).
 - $p = P(H \ge h)$; `enrichment` is $h / m$.
 - $q$ is Benjamini-Hochberg per **class**: the annotated starts, and the other
-  starts per region (leader, CDS, trailer, transcript without a CDS). With
+  starts per region (5′ UTR, CDS, 3′ UTR, transcript without a CDS). With
   `--scan`, BH counts every start codon of the class: the ones without
   harringtonine reads are tests with $p = 1$.
 - `typical_p` is the $p$ the window would have with the reads of a typical
@@ -266,14 +266,14 @@ catalogue's ORFs in other libraries, and score their frames with
 - **Power depends on the elongation reads.** A start with few elongation reads
   in its window has a wide posterior for its elongation rate, so it needs many
   harringtonine reads. Look at `expected` and `typical_p`.
-- **Leaders need more.** Leaders have a higher harringtonine / elongation
-  ratio than CDSs near their start, so a leader start needs more
+- **5′ UTRs need more.** 5′ UTRs have a higher harringtonine / elongation
+  ratio than CDSs near their start, so a 5′ UTR start needs more
   harringtonine reads than a CDS start with the same elongation reads.
-- **Deep leader starts.** The expected false calls in `starts_stats.tsv`
+- **Deep 5′ UTR starts.** The expected false calls in `starts_stats.tsv`
   come from the null windows of all depths, and most null windows are
-  shallow. Leader windows with many expected reads have more peaks at codons
+  shallow. 5′ UTR windows with many expected reads have more peaks at codons
   that cannot start. In the five pools of the validation, an estimated 11% of
-  the leader calls with fewer than 30 expected reads are false, but 26% (95%
+  the 5′ UTR calls with fewer than 30 expected reads are false, but 26% (95%
   interval 7-64%) of those with 30 or more. Most deep calls (64%) also raise
   their codons 1-5, as a used start does. Thus the deep calls stay in the
   output. Find them by `expected`, and look at their `shoulder` before you
@@ -281,9 +281,9 @@ catalogue's ORFs in other libraries, and score their frames with
   starts with 3 or more expected reads have a shoulder of 0 or less (median
   1.0), and so do 43-56% of the null-codon peaks that reach the $p$ of a
   call (median 0.0-0.2).
-- **Trailers.** Harringtonine libraries can hold RNA fragments that the
-  elongation libraries do not have, mostly in trailers and of short reads.
-  `starts_stats.tsv` gives many expected false calls in trailers; use those
+- **3′ UTRs.** Harringtonine libraries can hold RNA fragments that the
+  elongation libraries do not have, mostly in 3′ UTRs and of short reads.
+  `starts_stats.tsv` gives many expected false calls in 3′ UTRs; use those
   calls with care.
 - **Multimappers.** Each alignment counts once, so paralogs and pseudogenes
   share a start peak. `multimapped` gives the share of the window's reads
@@ -300,12 +300,12 @@ with a CDS).
   libraries (the nt beside the start peak has 45-93% of its P-sites) and 25
   nt in 13; 26-29 nt in none (37% or less). The kernel holds 37-54% of its
   P-sites at nt 0 and 1-5% at nt -1.
-- **Background**: leader factors are 1.3-3.3 near the CDS start and 0.7-1.6
+- **Background**: 5′ UTR factors are 1.3-3.3 near the CDS start and 0.7-1.6
   300 nt or more before it; CDS factors are 0.16-0.49 at codons 20-200 and
   0.8-0.9 at codons 700-1,000 (all against codons 1,000 and more).
 - **Null windows** (held-out transcripts: $\phi$ from the null windows of
   half the transcripts, $p$ of the other half): 0.14-0.15x alpha at
-  $p \le 0.01$ and 0.8-0.9x alpha at $p \le 0.001$ in leaders; 0.30-0.33x
+  $p \le 0.01$ and 0.8-0.9x alpha at $p \le 0.001$ in 5′ UTRs; 0.30-0.33x
   and 0.9-1.1x in CDSs.
 - **Annotated starts** (scan): 60% called (7,526 of 12,519); 22% of those
   with less than 0.3 expected reads in the window, 26% with 0.3-1, 54% with
@@ -313,16 +313,16 @@ with a CDS).
   the call is on the annotated codon in 99.1%.
 - **Swaps**: with an elongation library as the "harringtonine" library of
   another replicate (replicate 3 on 2, and replicate 1 on 2, in each pool),
-  2 and 1 of the 12,519 annotated starts are called, and 127 and 134 leader
+  2 and 1 of the 12,519 annotated starts are called, and 127 and 134 5′ UTR
   starts at q < 0.05 (6,105 with the harringtonine libraries).
-- **Start context**: called leader starts have a purine at -3 in 66-69% and a
-  G at +4 in 45-52%; start codons in leaders that are not called, at the
+- **Start context**: called 5′ UTR starts have a purine at -3 in 66-69% and a
+  G at +4 in 45-52%; start codons in 5′ UTRs that are not called, at the
   same depth, 54-58% and 30-35% ([Kozak 1986](#references)). The sequence
   plays no part in the test.
-- **Leader calls**: 6,105 leader starts have q < 0.05, and the scan calls
+- **5′ UTR calls**: 6,105 5′ UTR starts have q < 0.05, and the scan calls
   4,692 of them (the near-start rule); the catalogue has 3,383 uORFs and 908
-  uoORFs. False calls among the leader calls, estimated per bin of expected
-  reads (the null windows' rate at the cut times the leader start codons of
+  uoORFs. False calls among the 5′ UTR calls, estimated per bin of expected
+  reads (the null windows' rate at the cut times the 5′ UTR start codons of
   the bin): 11% below 30 expected reads, 14% in all. At 30 or more expected
   reads, the null codons of that depth give 26% (95% interval 7-64%). The
   harringtonine reads in codons 1-5 after the call do not point to more: 36%

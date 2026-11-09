@@ -5,9 +5,9 @@ A used start has more harringtonine P-sites in its window (the start codon +-1 c
 elongation profile of the same transcript expects. A pause has the same peak in both.
 
 Layout. The transcripts sit end to end in one array, GAP empty nt apart, so that no window reaches
-the next transcript. Each position has a region: leader, CDS, trailer (the stop codon and after) or
-transcript (no annotated CDS), and a distance in the region: nt to the CDS start in the leader, codons
-from the CDS start in the CDS, nt from the stop codon in the trailer, nt from the 5' end in a transcript.
+the next transcript. Each position has a region: 5' UTR, CDS, 3' UTR (the stop codon and after) or
+transcript (no annotated CDS), and a distance in the region: nt to the CDS start in the 5' UTR, codons
+from the CDS start in the CDS, nt from the stop codon in the 3' UTR, nt from the 5' end in a transcript.
 
 Calibration and start lengths. A library can put the P-sites of a read length 1-2 nt off: its nuclease can
 leave most 5' ends 1 nt longer than the pool's offsets expect (an initiation library's digestion is not the
@@ -34,8 +34,8 @@ its codons 1-10 (RAISED, never background), with mostly unique reads (processed 
 their parent's start peak).
 
 The test. A window has h harringtonine and e elongation reads. Its elongation rate has a gamma prior:
-mean lam0 (the sum over its nt of the elongation density of their zone in the transcript: leader, CDS
-frame 0, 1 or 2, trailer, transcript), shape a per region (from the null windows). Then h ~ NB(mean R max(e, (a + e) / (a / lam0 + 1)), shape a + e),
+mean lam0 (the sum over its nt of the elongation density of their zone in the transcript: 5' UTR, CDS
+frame 0, 1 or 2, 3' UTR, transcript), shape a per region (from the null windows). Then h ~ NB(mean R max(e, (a + e) / (a / lam0 + 1)), shape a + e),
 with R = f_b s_t: the prior lifts a window with few elongation reads, but does not shrink a pause.
 Pools add their means and variances. An extra overdispersion phi per region and bin of
 expected reads makes at most 1% of the null windows reach p <= 0.01. q is BH per class: the annotated
@@ -68,7 +68,7 @@ from . import annotation
 log = logging.getLogger(__name__)
 
 GAP = 64
-REGIONS = ("leader", "CDS", "trailer", "transcript")
+REGIONS = ("5UTR", "CDS", "3UTR", "transcript")
 CLASSES = REGIONS + ("annotated",)   # BH classes: the annotated starts, the other candidates by region
 START_CODONS = ("ATG", "CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATA", "ATC", "ATT")
 WIN = (-1, 3)        # a start's window: nt from its first nt, the start codon and the nt before it
@@ -88,7 +88,7 @@ WINDOW = (24, 34)    # start lengths: an 80S footprint is about 28 nt; the windo
 MIN_TOP = 0.4        # start lengths: the top frame has this share of a length's CDS-interior P-sites or more
 STOP_PROFILE = (-45, 15)   # QC profiles: nt from the first nt of the stop codon (codons -15..4)
 CDS_BINS = 20        # QC profiles: bins along the CDS
-LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "leader", "CDS", "trailer", "transcript",
+LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "5UTR", "CDS", "3UTR", "transcript",
                   "frame0", "frame1", "frame2", "top_frame", "periodic", "start_peak", "at_peak", "beside_peak", "mixed",
                   "calibrated", "shift", "offset", "qc", "start_length"]
 STRIDE = WIN[1] - WIN[0]   # one null codon per window width for the null windows: they do not overlap
@@ -102,9 +102,9 @@ PHI_GRID = np.r_[0, np.geomspace(1e-3, 100, 51)]
 MIN_NULL = 200       # null windows for a phi of its own: else the region's, else all windows'
 # lower edges of the distance bins per region (the region's distance unit)
 BINS = {
-    "leader": (0, 30, 100, 300),
+    "5UTR": (0, 30, 100, 300),
     "CDS": (0, 20, 50, 100, 200, 400, 700, 1000),
-    "trailer": (0, 100, 300, 1000),
+    "3UTR": (0, 100, 300, 1000),
     "transcript": (0,),
 }
 
@@ -140,11 +140,11 @@ class Layout:
         return self.first[i] + self.cds_start[i], i
 
 
-ZONES = 6   # leader, CDS frame 0, 1 and 2, trailer, transcript
+ZONES = 6   # 5' UTR, CDS frame 0, 1 and 2, 3' UTR, transcript
 
 
 def zone_index(layout, tx, region):
-    """Per flat position: leader 0, CDS frame 0-2 1-3, trailer 4, transcript 5; -1 in the gaps. The prior
+    """Per flat position: 5' UTR 0, CDS frame 0-2 1-3, 3' UTR 4, transcript 5; -1 in the gaps. The prior
     density of the elongation reads is per nt of a zone: a window holds one or two frame-0 nt of a CDS."""
     z = np.where(region < 0, -1, np.choose(np.maximum(region, 0), [0, 1, 4, 5])).astype(np.int8)
     cds = np.flatnonzero(region == 1)
@@ -302,7 +302,7 @@ def profile(pos, length, tx, anchor, lengths, window=PROFILE):
 
 
 def region_counts(pos, length, region, lengths):
-    """P-sites per (read length in [lo, hi], region: leader, CDS, trailer, transcript)."""
+    """P-sites per (read length in [lo, hi], region: 5' UTR, CDS, 3' UTR, transcript)."""
     lo, hi = lengths
     r = region[pos]
     k = (r >= 0) & (length >= lo) & (length <= hi)

@@ -9,8 +9,8 @@ P-site in frame 1 or 2 of the CDS. How often that happens is the length's frame
 profile pi_l, measured on reads well inside CDSs (frames.tsv).
 
 Components. The ORFs are the ORF table's plus the annotated CDSs. Every position of
-a transcript that is in no ORF belongs to one outside component: the leader (5' of
-the annotated CDS), the trailer (3' of it, its stop codon included), or the whole
+a transcript that is in no ORF belongs to one outside component: the 5' UTR (5' of
+the annotated CDS), the 3' UTR (3' of it, its stop codon included), or the whole
 transcript if it has no CDS. So every read with a P-site is counted somewhere.
 Alignments to BAM references that are not transcripts of the GTF are dropped: a
 read tied between such a reference and a GTF transcript counts for the latter.
@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 # no start or stop peaks
 INTERIOR = 15
 ORF_TYPES = ("CDS", "uORF", "uoORF", "other")
-OUTSIDE_TYPES = ("leader", "trailer", "transcript")
+OUTSIDE_TYPES = ("5UTR", "3UTR", "transcript")
 
 
 def psite_offsets(df, lengths):
@@ -130,7 +130,7 @@ def orf_table(path, gtf, fasta, anno, bam_len, stats):
 
 
 def outside_components(orfs, anno, refs, ref_len):
-    """Per BAM reference, its positions in no ORF: leader and trailer, or transcript if it has no
+    """Per BAM reference, its positions in no ORF: 5' UTR and 3' UTR, or transcript if it has no
     annotated CDS. Components without a position are left out. Length = their positions."""
     idx = anno.index()
     spans = {}
@@ -140,7 +140,7 @@ def outside_components(orfs, anno, refs, ref_len):
     for name, n in zip(refs, ref_len):
         c = idx.get(name)
         regions = ([("transcript", 0, n)] if c is None else
-                   [("leader", 0, anno.cds_start[c]), ("trailer", anno.cds_end[c], n)])
+                   [("5UTR", 0, anno.cds_start[c]), ("3UTR", anno.cds_end[c], n)])
         covered = np.zeros(n, dtype=bool)
         for s, e in spans.get(name, ()):
             covered[s:e] = True

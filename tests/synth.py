@@ -210,7 +210,7 @@ def make_dataset(directory, seed=1):
 ORF_READS = {"U1:CDS": 6000, "U1_uORF": 400, "U2_main": 2000, "U2_uoORF": 300, "U3:CDS": 2000, "U3_uoORF": 300,
              "U4:CDS": 2000, "U5:CDS": 2000, "U5_uoORF": 600, "N1_ORF": 300}
 # reads with their P-site on the start codon: U1_CUG has no others, U4's CDS has a start peak whose
-# reads 1-2 nt long at the 5' end put their P-site in U4_uoORF's leader part (untranslated)
+# reads 1-2 nt long at the 5' end put their P-site in U4_uoORF's 5' UTR part (untranslated)
 PEAKS = {"U1_CUG": 150, "U4:CDS": 150}
 BACKGROUND = 0.4
 
@@ -261,7 +261,7 @@ def outside_id(txs, orfs, name, p):
     tx = txs[name]
     if tx["cds_start"] is None:
         return f"{name}:transcript"
-    return f"{name}:leader" if p < tx["cds_start"] else f"{name}:trailer"
+    return f"{name}:5UTR" if p < tx["cds_start"] else f"{name}:3UTR"
 
 
 def make_orf_dataset(directory, seed=2, background_under_orfs=False):
@@ -323,9 +323,9 @@ def make_orf_dataset(directory, seed=2, background_under_orfs=False):
 # background is raised per region (HARR_*), and each planted start adds a kernel of `worth` x density reads
 # (KERNEL: share per nt from the start's first nt). Counts are Poisson.
 START_PEAK, PAUSE = 5, 15
-BG_LEADER, BG_TRAILER, BG_TRANSCRIPT = 0.05, 0.02, 0.05
+BG_5UTR, BG_3UTR, BG_TRANSCRIPT = 0.05, 0.02, 0.05
 KERNEL = {0: 0.5, **{3 * c: 0.06 for c in range(1, 6)}, **{3 * c: 0.04 for c in range(6, 11)}}
-HARR_LEADER, HARR_TRAILER, HARR_TRANSCRIPT = 4.0, 1.5, 1.5
+HARR_5UTR, HARR_3UTR, HARR_TRANSCRIPT = 4.0, 1.5, 1.5
 WORTH = 60     # a planted start: its kernel in codons of its ORF's density
 KOZAK = "GCCACC"
 
@@ -353,12 +353,12 @@ def build_start_transcripts(rng, n_fill=30):
     stop = lambda: str(rng.choice(STOPS))
     txs, orfs, pauses = {}, {}, {}
 
-    def add(name, leader, n_codons, density, worth=WORTH, trailer=150):
-        """A transcript: leader (its last 6 nt KOZAK), then a CDS of n_codons starting ATG GCC, stop, trailer."""
-        leader = leader[:-6] + KOZAK
-        txs[name] = leader + "ATGGCC" + codons(n_codons - 2) + stop() + rand(trailer)
-        orfs[f"{name}:CDS"] = (name, len(leader), len(leader) + 3 * n_codons, density, worth)
-        return len(leader)
+    def add(name, utr5, n_codons, density, worth=WORTH, utr3=150):
+        """A transcript: 5' UTR (its last 6 nt KOZAK), then a CDS of n_codons starting ATG GCC, stop, 3' UTR."""
+        utr5 = utr5[:-6] + KOZAK
+        txs[name] = utr5 + "ATGGCC" + codons(n_codons - 2) + stop() + rand(utr3)
+        orfs[f"{name}:CDS"] = (name, len(utr5), len(utr5) + 3 * n_codons, density, worth)
+        return len(utr5)
 
     for i in range(n_fill):
         add(f"F{i}", rand(int(rng.integers(250, 450))), int(rng.integers(150, 400)), float(rng.uniform(0.5, 3)))
@@ -369,7 +369,7 @@ def build_start_transcripts(rng, n_fill=30):
     add("S1", lead, 200, 1.5)
     orfs["S1_uATG"] = ("S1", 60, 99, 1.0, WORTH)
     orfs["S1_uCTG"] = ("S1", s, s + 27, 1.0, WORTH)
-    # S2: a uoORF, ATG 61 nt before the CDS (another frame), its leader part of sense codons
+    # S2: a uoORF, ATG 61 nt before the CDS (another frame), its 5' UTR part of sense codons
     lead = rand(84) + KOZAK
     s = len(lead)
     add("S2", lead + "ATGGCC" + codons(18) + rand(7), 200, 1.5)
@@ -403,7 +403,7 @@ def build_start_transcripts(rng, n_fill=30):
     # N1: no CDS, a translated ORF
     txs["N1"] = rand(144) + KOZAK + "ATGGCC" + codons(29) + stop() + rand(200)
     orfs["N1_ORF"] = ("N1", 150, 243, 1.0, WORTH)
-    # untranslated candidates: the first ATG or CTG of the first ten fillers' leaders that has a stop
+    # untranslated candidates: the first ATG or CTG of the first ten fillers' 5' UTRs that has a stop
     for i in range(10):
         name = f"F{i}"
         seq, cs = txs[name], orfs[f"{name}:CDS"][1]
@@ -429,8 +429,8 @@ def start_profiles(txs, orfs, pauses):
             h += BG_TRANSCRIPT * HARR_TRANSCRIPT
         else:
             d = orfs[f"{name}:CDS"][3]
-            e[:cs], h[:cs] = BG_LEADER * d, BG_LEADER * d * HARR_LEADER
-            e[ce:], h[ce:] = BG_TRAILER * d, BG_TRAILER * d * HARR_TRAILER
+            e[:cs], h[:cs] = BG_5UTR * d, BG_5UTR * d * HARR_5UTR
+            e[ce:], h[ce:] = BG_3UTR * d, BG_3UTR * d * HARR_3UTR
             peaks = [(cs, START_PEAK * d)] + ([(pauses[name], PAUSE * d)] if name in pauses else [])
             for p, x in peaks:
                 e[p] += x
@@ -488,7 +488,7 @@ INSPECT_LENGTHS = {21: (0.10, {12: 1.0}),                    # short state: 5' e
                    29: (0.25, {12: 0.85, 13: 0.10, 11: 0.05}),
                    34: (0.15, {13: 1.0})}                    # long: the extra length at the 3' end
 INSPECT_START_SPLIT = {29: {12: 0.6, 11: 0.4}}   # P-sites on the start codon: mixed at the starts, clean in the CDS
-FRAGMENT = 20         # RNA fragments: uniform in the trailers and on the transcript without a CDS
+FRAGMENT = 20         # RNA fragments: uniform in the 3' UTRs and on the transcript without a CDS
 UNTEMPLATED = "T"     # the added 5' nt (A where the transcript has T)
 
 

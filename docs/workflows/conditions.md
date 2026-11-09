@@ -19,7 +19,7 @@ own ORF table.
 - **Questions.** Which CDSs change their translation, or their translation
   efficiency? Which uORFs change, relative to the CDS of their transcript?
 - **What pitstop does.** It gives the counts and the labels: reads per CDS
-  (`quant`), reads per ORF, leader and trailer (`orfs`), frame evidence
+  (`quant`), reads per ORF, 5′ UTR and 3′ UTR (`orfs`), frame evidence
   (`score`), and start sites with a catalogue of ORFs (`starts`).
 - **What it does not do.** The tests of differences. Run them on pitstop's
   counts with a model for count data, for example DESeq2
@@ -151,9 +151,9 @@ that needs integers.
 ## Notes
 
 - **Read a uORF change against the global change.** A condition can move
-  ribosomes from the CDSs to the leaders as a whole. Then most uORFs go up
+  ribosomes from the CDSs to the 5′ UTRs as a whole. Then most uORFs go up
   relative to their CDS, and a test against no change finds many. Compare
-  with the change of all leaders (the `<transcript>:leader` rows of
+  with the change of all 5′ UTRs (the `<transcript>:5UTR` rows of
   `orfs.tsv`) or of all uORFs.
 - **Per gene, the uORF counts are small.** A test of the interaction over many
   uORFs at once (all uORFs against all CDSs) has more power than one test per

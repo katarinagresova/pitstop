@@ -29,7 +29,7 @@ THEME = {
     "wash": ("rgba(11,11,11,0.04)", "rgba(255,255,255,0.05)"),
     "f0": ("#2a78d6", "#3987e5"), "f1": ("#eb6834", "#d95926"), "f2": ("#1baf7a", "#199e70"),
     "k-clean": ("#3d3c39", "#e6e5df"), "k-short": ("#9b9990", "#8f8d85"), "k-noframe": ("#d3d1ca", "#4a4945"),
-    "r-leader": ("#eda100", "#c98500"), "r-cds": ("#008300", "#008300"), "r-trailer": ("#e87ba4", "#d55181"),
+    "r-5utr": ("#eda100", "#c98500"), "r-cds": ("#008300", "#008300"), "r-3utr": ("#e87ba4", "#d55181"),
     "r-nocds": ("#6250d6", "#9085e9"),
     "h0": ("#f0efec", "#222220"), "h1": ("#cde2fb", "#0d366b"), "h2": ("#9ec5f4", "#184f95"),
     "h3": ("#6da7ec", "#256abf"), "h4": ("#3987e5", "#3987e5"), "h5": ("#256abf", "#6da7ec"),
@@ -40,7 +40,7 @@ THEME = {
     "lk-cut": ("#FFFFFF", "#17181C"),
 }
 FIGURE = ("surface", "ink", "ink2", "muted", "grid", "axis", "f0", "f1", "f2", "k-clean", "k-short", "k-noframe",
-          "r-leader", "r-cds", "r-trailer", "r-nocds", "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7")
+          "r-5utr", "r-cds", "r-3utr", "r-nocds", "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7")
 C = {k: THEME[k][0] for k in FIGURE}   # the colours to draw with
 FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace"
@@ -420,8 +420,8 @@ def regions_chart(t, lib):
     fig = Figure(figsize=WIDE)
     fig.subplots_adjust(left=0.07, right=0.99, top=0.95, bottom=0.17)
     ax = fig.add_subplot()
-    colours = [C["r-leader"], C["r-cds"], C["r-trailer"], C["r-nocds"]]
-    labels = ["leader", "CDS", "trailer", "no CDS"]
+    colours = [C["r-5utr"], C["r-cds"], C["r-3utr"], C["r-nocds"]]
+    labels = ["5′ UTR", "CDS", "3′ UTR", "no CDS"]
     tips = {}
     for i, r in t.iterrows():
         bottom = 0.0
@@ -807,7 +807,7 @@ def inspect_report(prefix):
                      f"The length distance between the reads on CDSs and on transcripts without a CDS is {f2(ld)}. "
                      + ("The reads without a CDS have another length profile: most are not ribosomes."
                         if ld > DISTANCE else "The two profiles are alike.")))
-    rt = t_all[["length", "reads", "offset", "leader", "CDS", "trailer", "transcript"]]
+    rt = t_all[["length", "reads", "offset", "5UTR", "CDS", "3UTR", "transcript"]]
     regions = section("regions", "Regions per length", (
         findings(reg_find)
         + tiles([("CDS share", f2(cds), "all P-sites"),
@@ -818,9 +818,9 @@ def inspect_report(prefix):
         + fig_block("Where the P-sites of each length fall", charts["regions"],
                     "The P-site of a length is its offset from the 5′ end: the distance of its commonest 5′ end from "
                     f"the start codon, or {qc.DEFAULT_OFFSET} nt with fewer than {qc.MIN_ANCHOR} reads there. The "
-                    "trailer starts at the stop codon.",
-                    legend([(None, "var(--r-leader)", "leader"), (None, "var(--r-cds)", "CDS"),
-                            (None, "var(--r-trailer)", "trailer"), (None, "var(--r-nocds)", "no CDS")]),
+                    "3′ UTR starts at the stop codon.",
+                    legend([(None, "var(--r-5utr)", "5′ UTR"), (None, "var(--r-cds)", "CDS"),
+                            (None, "var(--r-3utr)", "3′ UTR"), (None, "var(--r-nocds)", "no CDS")]),
                     tsv_view(rt, f"{lib}.lengths.tsv"))))
 
     fr_find = [(st["weak_frame"], f"Clean share {f2(s['clean_share'])}: the clean lengths are "

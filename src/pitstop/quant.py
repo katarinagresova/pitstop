@@ -132,7 +132,7 @@ def qc_table(aln, anno, lengths, has_off, psite_in_cds, psite):
     over its alignments to transcripts with a CDS or, if it has none, over all its alignments.
     has_off, psite_in_cds, psite: assign() on the alignments of `aln` to a transcript with a CDS at a length
     in `lengths`, in their order in `aln`.
-      region  where the P-site is: leader, CDS (start codon to last sense codon) or trailer (the stop codon
+      region  where the P-site is: 5UTR, CDS (start codon to last sense codon) or 3UTR (the stop codon
               and after); NA without a CDS, at a length outside `lengths` or without an offset
       phase   (5' end - CDS start) mod 3, as in offsets.tsv, if the 5' end is in the CDS; else NA"""
     has_cds = np.zeros(aln.n_reads, dtype=bool)
@@ -146,14 +146,14 @@ def qc_table(aln, anno, lengths, has_off, psite_in_cds, psite):
     window = np.flatnonzero(coding & (aln.length >= lengths[0]) & (aln.length <= lengths[1]))
     assert window.size == psite.size
     # small integer codes, not strings and Int64 (less memory), in the order in which a groupby with
-    # dropna=False sorts the labels: phase 0-2, NA 3; region CDS 0, leader 1, trailer 2, NA 3
+    # dropna=False sorts the labels: phase 0-2, NA 3; region CDS 0, 5UTR 1, 3UTR 2, NA 3
     phase = np.where(in_cds, (aln.pos5 - start) % 3, 3).astype(np.int8)
     region = np.full(weight.size, 3, dtype=np.int8)
     region[window[has_off]] = np.select([psite < start[window], psite_in_cds], [1, 0], 2)[has_off]
     qc = (pd.DataFrame({"length": aln.length, "region": region, "phase": phase, "reads": weight})
           .groupby(["length", "region", "phase"])["reads"].sum().reset_index())
     r, p = qc["region"].to_numpy(), qc["phase"].to_numpy()
-    qc["region"] = pd.array(np.array(["CDS", "leader", "trailer", None], dtype=object)[r], dtype="string")
+    qc["region"] = pd.array(np.array(["CDS", "5UTR", "3UTR", None], dtype=object)[r], dtype="string")
     qc["phase"] = pd.arrays.IntegerArray(np.where(p < 3, p, 0).astype(np.int64), p == 3)
     return qc
 

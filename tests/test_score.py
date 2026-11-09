@@ -42,8 +42,8 @@ def test_synthetic_calls(scored):
     # synthetic truth: translated ORFs are called; the untranslated candidate, the CUG with a start peak only
     # and U4 (untranslated, but the CDS start peak spills into it) are not. Over seeds 2-11, the
     # untranslated three had q >= 0.34, U1_uORF and N1_ORF q <= 4.2e-5, U5_uoORF q <= 0.0063. The
-    # uoORFs U2 and U3 are not called reliably (q 4e-4-0.88): their 19 leader codons lead ~2/3 of the
-    # time (synthetic frame-0 share ~0.6), and in the CDS its reads outvote theirs. U5, with 49 leader
+    # uoORFs U2 and U3 are not called reliably (q 4e-4-0.88): their 19 5' UTR codons lead ~2/3 of the
+    # time (synthetic frame-0 share ~0.6), and in the CDS its reads outvote theirs. U5, with 49 5' UTR
     # codons and twice the reads, is a uoORF the score can call
     q = scored["scores"]["q"]
     for i in ("U1_uORF", "N1_ORF", "U5_uoORF"):

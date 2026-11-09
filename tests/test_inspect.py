@@ -80,10 +80,10 @@ def test_ends_at_starts_and_stops(clean):
 def test_fragments_by_region(clean):
     _, out = clean
     t = out["lengths"]
-    assert t.loc[20, "CDS"] < 0.05 and t.loc[20, "trailer"] + t.loc[20, "transcript"] > 0.95
+    assert t.loc[20, "CDS"] < 0.05 and t.loc[20, "3UTR"] + t.loc[20, "transcript"] > 0.95
     assert (t.loc[[21, 27, 28, 29, 34], "CDS"] > 0.95).all()
     assert out["summary"]["length_distance"] > 0.9
-    assert np.allclose(t[["leader", "CDS", "trailer", "transcript"]].sum(axis=1), 1)
+    assert np.allclose(t[["5UTR", "CDS", "3UTR", "transcript"]].sum(axis=1), 1)
 
 
 def test_complexity(clean):
@@ -164,7 +164,7 @@ def test_end3_spread():
     assert (peak, n) == (-12, 1000) and sd == pytest.approx(np.sqrt(0.96))
     peak, n, sd = inspect.end3_spread(anchors([(28, -12, 600), (30, -12, 300)]))
     assert (peak, n) == (-12, 900) and np.isnan(sd)            # fewer than SPREAD_READS reads
-    assert np.isnan(inspect.end3_spread(anchors([(28, 0, 5000)]))[2])   # no leaders: no read starts before a start
+    assert np.isnan(inspect.end3_spread(anchors([(28, 0, 5000)]))[2])   # no 5' UTRs: no read starts before a start
 
 
 def test_end3_spread_of_the_synthetic_reads(clean, monkeypatch):

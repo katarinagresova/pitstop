@@ -11,7 +11,7 @@ Words. The CDS interior: the read is at least INTERIOR nt inside the CDS at both
 CDS start) mod 3; the top frame of a length: the share of its top phase in the CDS interior. The start peak: the
 commonest 5' end at the annotated starts (nt from the first nt of the start codon), in PEAK; beside: the larger of the
 two nt beside a peak, as a share of the peak. The offset of a length: minus its start peak, or DEFAULT_OFFSET with
-fewer than MIN_ANCHOR reads at the peak; its P-sites give the regions (leader, CDS, trailer: the stop codon and after;
+fewer than MIN_ANCHOR reads at the peak; its P-sites give the regions (5' UTR, CDS, 3' UTR: the stop codon and after;
 transcript: no CDS). Repair (`pitstop repair`) clips the untemplated 5' nt: of the first UNTEMPLATED_MAX nt of the
 read, from the first aligned nt on, each that does not match the transcript becomes a soft clip; it stops at the
 first match (an aligner's 5' soft clip counts towards the UNTEMPLATED_MAX nt, and one nt stays aligned). The 3' end
@@ -85,7 +85,7 @@ SHORT_MAX = 22       # short reads: this many nt or fewer
 DISOME = (50, 70)    # disomes
 BACKGROUND = (4, 8)  # the mismatch background: positions 4-7 from the end
 SUBSAMPLES = 10      # complexity: fractions 0.1, 0.2, ... 1
-REGIONS = ("leader", "CDS", "trailer", "transcript")
+REGIONS = ("5UTR", "CDS", "3UTR", "transcript")
 CODE = np.full(256, 4, dtype=np.uint8)
 for _i, _b in enumerate(b"ACGT"):
     CODE[_b] = _i
@@ -95,7 +95,7 @@ BASES = "ACGT"
 WEAK_FRAME = (0.5, 0.3)      # clean share: pass >= 0.5, warn >= 0.3, else fail
 LONG_READS = (0.10, 0.25)    # share at LONG nt or more: pass < 0.10, warn < 0.25, else fail
 UNDER_DIGESTION = (1.4, 1.7)  # 3' end spread (nt): pass < 1.4, warn < 1.7, else fail
-SPREAD_READS = 1_000         # ... unknown with fewer reads at the start peak (a GTF without leaders has none)
+SPREAD_READS = 1_000         # ... unknown with fewer reads at the start peak (a GTF without 5' UTRs has none)
 UNTEMPLATED = (0.05, 5)      # 5' mismatch >= 0.05 and >= 5x its background ...
 CLIPPED = 0.5                # ... and clipped by the aligner (info, not fail) if the 5' clip share >= 0.5 x it
 SPIKE = (3, 0.1)             # a mismatch spike: > 3x the background and > 0.1 (5' positions 2-3, 3' positions 0-1)

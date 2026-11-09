@@ -92,12 +92,12 @@ def test_orf_table(orf_run, orf_data):
     assert t.at["U1_CUG", "start_codon"] == "CTG"
     for i, (name, start, end) in orf_data["orf_coords"].items():
         assert tuple(t.loc[i, ["Name", "start", "end"]]) == (name, start, end)
-    outside = {"U1:leader", "U1:trailer", "U2:leader", "U2:trailer", "U3:leader", "U3:trailer", "U4:leader",
-               "U4:trailer", "U5:leader", "U5:trailer", "P1:transcript", "N1:transcript"}   # not "unannotated"
+    outside = {"U1:5UTR", "U1:3UTR", "U2:5UTR", "U2:3UTR", "U3:5UTR", "U3:3UTR", "U4:5UTR",
+               "U4:3UTR", "U5:5UTR", "U5:3UTR", "P1:transcript", "N1:transcript"}   # not "unannotated"
     assert (s["refs_not_in_gtf"], s["alignments_dropped_ref_not_in_gtf"]) == (1, 0)
     assert set(t.index[~t["type"].isin(orfs.ORF_TYPES)]) == outside
-    # a leader's positions are those in no ORF: U1's 277 nt hold uORFs of 63, 48 and 33 nt
-    assert t.at["U1:leader", "Length"] == 277 - 63 - 48 - 33
+    # a 5' UTR's positions are those in no ORF: U1's 277 nt hold uORFs of 63, 48 and 33 nt
+    assert t.at["U1:5UTR", "Length"] == 277 - 63 - 48 - 33
 
 
 def test_orf_counts_match_truth(orf_run, orf_data):
@@ -168,14 +168,14 @@ def test_codons_from_psites(orf_run):
     got = pd.read_csv(f"{orf_run['prefix']}.codons.tsv", sep="\t")
     key = ["ORF_id", "codon", "length"]
     assert got.sort_values(key).reset_index(drop=True).equals(expected.sort_values(key).reset_index(drop=True))
-    # U1_cand is untranslated, with no background under it; only its stop codon, in the leader, can have reads
+    # U1_cand is untranslated, with no background under it; only its stop codon, in the 5' UTR, can have reads
     cand = got["ORF_id"] == "U1_cand"
     assert set(got.loc[~cand, "ORF_id"]) == set(t.index[t["type"].isin(orfs.ORF_TYPES[1:])]) - {"U1_cand"}
     assert (got.loc[cand, "codon"] == (t.at["U1_cand", "end"] - t.at["U1_cand", "start"]) // 3).all()
 
 
 def test_frame_term_returns_overlap_reads_to_cds(orf_run, orf_data, tmp_path, monkeypatch):
-    # U4_uoORF is untranslated, but its leader part holds the CDS start peak's reads that are 1-2 nt
+    # U4_uoORF is untranslated, but its 5' UTR part holds the CDS start peak's reads that are 1-2 nt
     # long at the 5' end, so the EM takes it for translated. Split by density alone, the overlap
     # gives it ~90 reads; the frame term returns >= 15 of them to the CDS (23-45 over seeds 2-11).
     # It keeps ~60: CDS reads in frame 1 are in its frame 0.

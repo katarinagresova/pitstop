@@ -209,7 +209,7 @@ def test_start_lengths_from_kernel(started):
     assert not qc["mixed"].any() and (qc["beside_peak"] < starts.MIXED * qc["at_peak"]).all()
     assert (qc["offset"] == orfs_offsets(qc)).all()          # no shift: the orfs runs' offsets
     assert (qc["qc"] == "pass").all() and (qc["pool"] == "A").all()
-    assert (qc["psites"] == qc[["leader", "CDS", "trailer", "transcript"]].sum(axis=1)).all()
+    assert (qc["psites"] == qc[["5UTR", "CDS", "3UTR", "transcript"]].sum(axis=1)).all()
     assert np.allclose(qc.groupby("library")["share"].sum(), 1)
     prof = pd.read_csv(started["dir"] / "s.profiles.tsv", sep="\t")
     n = (starts.PROFILE[1] - starts.PROFILE[0]) + (starts.STOP_PROFILE[1] - starts.STOP_PROFILE[0]) + starts.CDS_BINS * 3
@@ -282,7 +282,7 @@ def test_synthetic_calls(started):
     assert (q[out.index.str.endswith("_cand")] < 0.05).sum() <= 1
     assert p["S4_pairATG"] < p["S4_pairCTG"] and p["S5_first"] < p["S5_after"]
     assert out.at["S6_pause", "enrichment"] < 1.5        # a pause: elongation peak, harringtonine not raised
-    assert out.at["S2_uoORF", "region"] == "leader" and pd.isna(out.at["N1_ORF", "frame"])
+    assert out.at["S2_uoORF", "region"] == "5UTR" and pd.isna(out.at["N1_ORF", "frame"])
 
 
 def test_starts_cli_deterministic(started, tmp_path):
@@ -318,7 +318,7 @@ def test_scan_calls(started):
     # synthetic truth for the scan. Over seeds 3-12: every annotated start called; 66 of 70 planted starts called at their
     # codon, the misses at 1.1-4.2x enrichment with 3-6 elongation reads (q 0.08-1); the pair's CTG and the weaker
     # start 5 codons after a planted one are never called, and listed with the start that stops them; the pause
-    # and the untranslated uORF never called. Calls at no planted start: 0-4 per seed in leaders (q >= 0.012 but
+    # and the untranslated uORF never called. Calls at no planted start: 0-4 per seed in 5' UTRs (q >= 0.012 but
     # one), 1-6 in CDSs
     data = started["data"]
     out = started["scan"]
@@ -340,8 +340,8 @@ def test_scan_calls(started):
                 assert out.at[by_truth.at[weaker, "stopped_by"], "truth"] == stronger
     for i in ("S6_pause", "S7_quiet"):
         assert i not in by_truth.index or not by_truth.at[i, "called"], i
-    false_leader = out[out["called"] & out["truth"].isna() & (out["region"] == "leader")]
-    assert len(false_leader) <= 3
+    false_5utr = out[out["called"] & out["truth"].isna() & (out["region"] == "5UTR")]
+    assert len(false_5utr) <= 3
     so = pd.read_csv(started["dir"] / "scan.start_orfs.tsv", sep="\t")
     assert len(so) == started["scan_stats"]["called"] - len(cds) - started["scan_stats"]["called_without_stop"]
     assert (so["type"] != "CDS").all() and set(so.columns[:4]) == {"ORF_id", "Name", "start", "end"}
@@ -357,8 +357,8 @@ def test_scan_start_codons_and_fdr(started, tmp_path):
     st = pd.read_csv(tmp_path / "atg.starts_stats.tsv", sep="\t").set_index("stat")["value"]
     cds = out["type"] == "CDS"
     assert (out.loc[~cds, "codon"] == "ATG").all() and cds.sum() == (started["scan"]["type"] == "CDS").sum()
-    assert (out.loc[out["called"], "q"] < 0.01).all() and st["start_codons"] == "ATG" and "q<0.01 leader" in st.index
-    assert 0 < int(st["tests leader"]) < started["scan_stats"]["tests leader"]
+    assert (out.loc[out["called"], "q"] < 0.01).all() and st["start_codons"] == "ATG" and "q<0.01 5UTR" in st.index
+    assert 0 < int(st["tests 5UTR"]) < started["scan_stats"]["tests 5UTR"]
     key = {f"{n}_{s + 1}": i for i, (n, s, e, _, _) in data["orf_coords"].items()}
     called = set(out.loc[out["called"], "ORF_id"].map(key).dropna())
     assert {"S1_uATG", "S4_pairATG"} <= called and "S1_uCTG" not in called
@@ -405,8 +405,8 @@ def test_catalogue(started):
     calls = out[out["called"] & out["type"].isin(["uORF", "uoORF"])]
     assert set(cat.index[cat["type"] != "CDS"]) == set(calls["ORF_id"])
     assert (cat["type"] == "CDS").sum() == 37
-    # the shoulder of each row is its start's in starts.tsv (synthetic leaders have no shoulder contrast: their
-    # harringtonine / elongation ratio, HARR_LEADER, is about the planted kernel's in codons 1-5)
+    # the shoulder of each row is its start's in starts.tsv (synthetic 5' UTRs have no shoulder contrast: their
+    # harringtonine / elongation ratio, HARR_5UTR, is about the planted kernel's in codons 1-5)
     shoulder = out.set_index("ORF_id")["shoulder"]
     assert np.allclose(cat["shoulder"], shoulder[cat.index]) and shoulder.notna().all()
     assert started["out"]["shoulder"].notna().all()

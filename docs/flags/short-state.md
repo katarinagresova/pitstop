@@ -30,7 +30,7 @@ half of its P-sites or more are in the CDS.
   line unknown.
 - The CDS share was 0.64-0.97 in all libraries of the check. No library
   warns.
-- A limit: with a GTF without leaders and trailers (as for many yeast
+- A limit: with a GTF without 5′ UTRs and 3′ UTRs (as for many yeast
   spike-ins), every P-site is in the CDS. The share is then 1, and the flag is
   info.
 

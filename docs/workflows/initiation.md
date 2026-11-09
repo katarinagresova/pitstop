@@ -174,8 +174,8 @@ conditions](conditions.md).
   stopped on the codon in the drug. Whether they go on to elongate in the
   ORF's frame is the question of `score`. An ORF with both has the strongest
   support.
-- **Calls with care.** Leader starts with many expected reads, and starts in
-  trailers, have more false calls than the rest: [Reading the
+- **Calls with care.** 5′ UTR starts with many expected reads, and starts in
+  3′ UTRs, have more false calls than the rest: [Reading the
   results](../starts.md#reading-the-results).
 - **Near starts.** Of two starts within 8 nt, or within 10 codons after a
   called start, one is called.

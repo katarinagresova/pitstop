@@ -11,8 +11,8 @@ by a ribosome reading it.
 ## Background
 
 **uORFs and uoORFs.** An upstream ORF (uORF) starts in a transcript's 5′
-leader; about half of human and mouse transcripts have at least one
-([Calvo et al. 2009](#references)). Ribosomes scan the leader from the 5′ end
+UTR; about half of human and mouse transcripts have at least one
+([Calvo et al. 2009](#references)). Ribosomes scan the 5′ UTR from the 5′ end
 and start at the first suitable start codon, so a ribosome that translates a
 uORF reaches the CDS only if it resumes scanning after the uORF's stop and
 starts again (reinitiates). Many do not, and uORF translation usually
@@ -47,7 +47,7 @@ after codon: a 3-nt periodicity, which is the signal that ORF callers test
 **Reads in an ORF's span are not enough.** Not every footprint inside a short
 ORF comes from a ribosome translating it. Ribosomes that start or pause at one
 codon without going on make a peak; an ORF that overlaps a CDS collects the
-CDS's footprints, mostly in the CDS's frame; and the leader carries a
+CDS's footprints, mostly in the CDS's frame; and the 5′ UTR carries a
 background of reads with no frame. Only P-sites in the ORF's own frame, over
 many of its codons, show that ribosomes elongate through it.
 
@@ -59,7 +59,7 @@ many of its codons, show that ribosomes elongate through it.
   frame. A count of the reads in the span cannot tell these apart; the frame can.</figcaption>
 </figure>
 
-A real case, from libraries of a human cell line: one CUG in the leader of a
+A real case, from libraries of a human cell line: one CUG in the 5′ UTR of a
 highly expressed mRNA holds as many P-sites as the mRNA's AUG start codon, so
 a span count makes the ORF that starts at this CUG look well translated. But
 only 2.3-3.7% of the reads after the CUG are in that ORF's frame — the rest
@@ -130,11 +130,11 @@ Each ORF's `type` comes from its coordinates against that transcript's
 annotated CDS:
 
 <figure markdown="span">
-  ![A transcript with a uORF in the leader, a uoORF overlapping the CDS out of frame, and an "other" ORF on a transcript with no CDS](img/orf_types.svg)
+  ![A transcript with a uORF in the 5′ UTR, a uoORF overlapping the CDS out of frame, and an "other" ORF on a transcript with no CDS](img/orf_types.svg)
   <figcaption><b>uORF</b>: ends at or before the CDS start, in any frame. <b>uoORF</b>: starts
   upstream of the CDS and is out of frame with it. <b>other</b>: anything else, including an ORF on
   a transcript with no annotated CDS, or an in-frame N-terminal extension of one. Positions in no
-  ORF form the <b>outside components</b> (gray): leader, trailer, or the whole transcript.</figcaption>
+  ORF form the <b>outside components</b> (gray): 5′ UTR, 3′ UTR, or the whole transcript.</figcaption>
 </figure>
 
 Rows can share a stop: each longer one is then an in-frame N-terminal
@@ -145,7 +145,7 @@ splits the reads they share ([Known limits](#known-limits)).
 
 Every position of a transcript that is in no ORF belongs to exactly one
 **outside component**, so every read with a P-site is counted somewhere:
-`<transcript>:leader` (5′ of the annotated CDS), `<transcript>:trailer` (3′ of
+`<transcript>:5UTR` (5′ of the annotated CDS), `<transcript>:3UTR` (3′ of
 it, its stop codon included), or `<transcript>:transcript` if it has no
 annotated CDS at all. Empty components (no free positions) are left out.
 Outside components carry no frame term ([step 4](#4-em-with-a-frame-term)).
@@ -159,7 +159,7 @@ without a CDS that holds 240 nt of U1's CDS, and 2,919 reads fit both:
 `quant` gives U1's CDS 6,090 reads, against 5,984 drawn from it; `orfs` gives
 it 6,010, and P1 127, against 153. This is also why `orfs`' CDS counts differ a
 little from `quant`'s; for CDS counts, use `quant`
-([Typical workflow](#typical-workflow)). A leader's `NumReads` over its
+([Typical workflow](#typical-workflow)). A 5′ UTR's `NumReads` over its
 `Length` is the read density around its transcript's uORFs, e.g. a reference
 for them.
 
@@ -301,7 +301,7 @@ with one `--orfs-prefix`. The runs must share one ORF table: if their
 </figure>
 
 - **Why the start codon does not vote.** Ribosomes that initiate make a peak
-  at the start codon whether or not they go on to elongate, as at the leader
+  at the start codon whether or not they go on to elongate, as at the 5′ UTR
   CUG in the [Background](#background). The codons after it ask only whether
   ribosomes elongate in the ORF's frame.
 - **Which lengths vote.** By default, the read lengths whose frame-0 share is
@@ -338,9 +338,9 @@ with one `--orfs-prefix`. The runs must share one ORF table: if their
   is conservative outside a CDS overlap (where $q_0 = 1/3$) and only differs
   from it where the ORF's frame is also the host CDS's dominant frame. In 6
   human libraries, at codons with 2 reads, both reads were in one frame in
-  80% of the leader codons and 75% of the trailer codons, against 33% for
+  80% of the 5′ UTR codons and 75% of the 3′ UTR codons, against 33% for
   independent reads; reads with one alignment clumped as much or more. So in
-  leaders, a codon with 2 reads led in a given frame about 0.27 of the time,
+  5′ UTRs, a codon with 2 reads led in a given frame about 0.27 of the time,
   not the multinomial's 1/9. The multinomial alone called 184 uORFs and
   uoORFs, one vote 97, all of them among the 184; the 87 calls lost had a
   median of 6 codons with reads and 2.2 reads per codon. Synthetic reads do
@@ -390,7 +390,7 @@ Each file is written as `<prefix>.<name>`:
 
 | File | Content |
 |---|---|
-| `orfs.tsv` | `ORF_id Name type start end start_codon Length NumReads`, one row per ORF and outside component, sorted by `Name`, `start`, `end`. `NA` where no read is compatible. For an outside component, `type` is `leader`, `trailer` or `transcript`, `start`–`end` is its whole region, `Length` counts only its positions in no ORF (the length the EM uses), and `start_codon` is `NA`. |
+| `orfs.tsv` | `ORF_id Name type start end start_codon Length NumReads`, one row per ORF and outside component, sorted by `Name`, `start`, `end`. `NA` where no read is compatible. For an outside component, `type` is `5UTR`, `3UTR` or `transcript`, `start`–`end` is its whole region, `Length` counts only its positions in no ORF (the length the EM uses), and `start_codon` is `NA`. |
 | `offsets.tsv` | The same table as `quant`'s ([Method, step 3](method.md#3-p-site-offsets)): on the same BAM and read lengths, the two commands give the same offsets, and either one's `--offsets` accepts it. `orfs` uses only each length's phase-0 offset. |
 | `frames.tsv` | Per read length: `offset` (the phase-0 offset), `reads`, `frame0 frame1 frame2`. |
 | `codons.tsv` | `ORF_id codon length frame0 frame1 frame2`: P-sites per codon, length and frame, for every ORF but the annotated CDSs — `score`'s input. `codon` counts from 0, the start codon, up to and including the stop codon, which the decoys reach into. Frames are relative to the ORF's start, not to the CDS as in `frames.tsv`. Only codons and lengths with P-sites have a row. Each alignment counts 1: a read that aligns to several transcripts counts once on each, not 1/(number of alignments). |
@@ -596,7 +596,7 @@ and `score` 21-34 s and 0.25-0.42 GB for 6-15 libraries.
 - **Transcript ends.** A P-site is seen only if its whole footprint lies on
   the transcript, so a transcript's first nt, up to the offset, and its last
   few codons get fewer P-sites than its middle. The EM uses each component's
-  full length, so a leader, a trailer or an ORF near a transcript end gets a
+  full length, so a 5′ UTR, a 3′ UTR or an ORF near a transcript end gets a
   density a little too low.
 
 ## Worked example
@@ -639,7 +639,7 @@ U2's uoORF and its CDS recover their combined truth within 0.3%, and their
 share of it within 2 percentage points; U3's (frame 2) do the same. U4's
 untranslated uoORF is not free of reads, though. Its CDS's start-codon peak
 holds footprints 1-2 nt long at the 5′ end, which put their P-site 1-2 nt
-upstream of the CDS start: in the uoORF's leader part, where the uoORF is the
+upstream of the CDS start: in the uoORF's 5′ UTR part, where the uoORF is the
 only component. With that density, the EM takes the uoORF for translated and
 gives it a share of the overlap as well — 129 reads in all by density alone.
 The frame term returns about a quarter of them to the CDS, leaving 99, but not
@@ -700,35 +700,35 @@ are not shipped with pitstop; the numbers come from its validation runs.
   harringtonine libraries matched to the 15: 4,291 ORFs, 3,383 uORFs and 908
   uoORFs, with start codons ATG 1,722, CTG 1,005, GTG 441, AGG 257, ACG
   217, TTG 198, AAG 173, ATT 111, ATC 93 and ATA 74, and a median length of
-  51 nt. Added to it: the ORF that starts at the leader CUG of [A peak is not
+  51 nt. Added to it: the ORF that starts at the 5′ UTR CUG of [A peak is not
   a uORF](#a-peak-is-not-a-uorf), a uoORF, so 909 uoORFs in all. 387 of the
   ORFs are in 188 nested groups ([Known limits](#known-limits)).
 
 ### Is the null calibrated?
 
 Windows of 10 codons where no catalogue ORF is, scored as an ORF there would
-be (6 libraries pooled, score lengths): in leaders, in trailers, and in the
+be (6 libraries pooled, score lengths): in 5′ UTRs, in 3′ UTRs, and in the
 two off-frames of CDSs. Observed / expected windows at two `p` cuts (for
-leaders and trailers, the range over the three frames of a window), for
+5′ UTRs and 3′ UTRs, the range over the three frames of a window), for
 a null that takes a codon's reads as independent (multinomial) and for one
 vote per codon ([step 5](#5-the-codon-lead-score)):
 
 | Windows | Null | p ≤ 0.05 | p ≤ 0.001 |
 |---|---|---:|---:|
-| leaders | multinomial | 314-332 / 72-74 | 9-14 / 0.1 |
+| 5′ UTRs | multinomial | 314-332 / 72-74 | 9-14 / 0.1 |
 | | one vote | 158-170 / 62-64 | 1-6 / < 0.1 |
-| trailers | multinomial | 314-661 / 118-119 | 16-82 / 0.4 |
+| 3′ UTRs | multinomial | 314-661 / 118-119 | 16-82 / 0.4 |
 | | one vote | 183-457 / 120-123 | 3-37 / 0.1 |
 | CDS frame +1 | multinomial | 14,119 / 1,862 | 2,766 / 54 |
 | | one vote | 5,294 / 3,991 | 264 / 64 |
 | CDS frame +2 | multinomial | 16,913 / 9,328 | 1,077 / 82 |
 | | one vote | 9,091 / 8,022 | 291 / 83 |
 
-One vote per codon removes much of the excess, but not all of it. Leaders
-and trailers are not clean null sets: they hold translated ORFs that are not
-in the catalogue, and trailers have a frame bias of unknown cause (at codons
+One vote per codon removes much of the excess, but not all of it. 5′ UTRs
+and 3′ UTRs are not clean null sets: they hold translated ORFs that are not
+in the catalogue, and 3′ UTRs have a frame bias of unknown cause (at codons
 with 1 read, 0.31 / 0.36 / 0.34 of the reads in the CDS's frames 0 / 1 / 2,
-against 0.34 / 0.32 / 0.34 in leaders). This check cannot tell how much of
+against 0.34 / 0.32 / 0.34 in 5′ UTRs). This check cannot tell how much of
 their excess is translation. In CDS off-frames, the null uses the frame
 profile of all CDSs, and CDSs differ ([Known limits](#known-limits)).
 
@@ -739,7 +739,7 @@ and 20 (1.1). A decoy of a translated ORF seldom leads
 ([Reading the results](#reading-the-results)): the decoys of the 338 ORFs
 that the multinomial null called in the 6 libraries had none at p ≤ 0.05,
 against 15.1 expected. But few ORFs of this catalogue are called, so most of
-its decoys fall on the same leaders and CDS off-frames as the null windows,
+its decoys fall on the same 5′ UTRs and CDS off-frames as the null windows,
 and some read a translated frame that is not in the catalogue: in one decoy,
 25 of the 27 codons with reads lead. At the q < 0.05 cut, 13 of 7,675
 decoys passed in the 6 libraries and 40 in the 15: an empirical FDR of 0.048
@@ -851,7 +851,7 @@ If these uORFs were translated as CDSs are, 80% or more of the last row would
 be called. The 139 not called have reads, but fewer than half of them in the
 uORF's frame (median in-frame share 0.48, against 0.89 in the called). Part
 of the gap can be false start calls, which the scan estimates to be more
-frequent among deep leader starts (26%, 95% interval 7-64%;
+frequent among deep 5′ UTR starts (26%, 95% interval 7-64%;
 [Start sites](starts.md#reading-the-results)). A start call says that
 ribosomes start at the codon; a call of `score` says that they elongate in
 the ORF's frame over many codons. One does not imply the other
@@ -859,8 +859,8 @@ the ORF's frame over many codons. One does not imply the other
 
 ### A peak is not a uORF
 
-The leader of a highly expressed mRNA has a CUG, made by a variant of this
-cell line, that holds 70-73% of the leader's P-sites. In the elongation
+The 5′ UTR of a highly expressed mRNA has a CUG, made by a variant of this
+cell line, that holds 70-73% of the 5′ UTR's P-sites. In the elongation
 libraries, nt 0 of the CUG has as many P-sites as nt 0 of the mRNA's AUG
 start codon (520 and 542 in one condition, 52 and 62 in the other). The
 start scan does not test it, because the reference genome has CUC there.
@@ -881,10 +881,10 @@ start scan does not test it, because the reference genome has CUC there.
 Against a simple **span count**: every alignment of 20-40 nt (soft clips
 included), on either strand and with any CIGAR, counts 1 at a P-site 12 nt
 from its 5′ end, in any frame; a uoORF counts only upstream of the CDS start,
-and a leader is the 5′ UTR without the catalogue ORFs. One rule changes per
+and a 5′ UTR is counted without the catalogue ORFs. One rule changes per
 step, toward `orfs`. Totals over the 6 libraries, relative to the span count:
 
-| Step | uORF | uoORF | CDS | leader |
+| Step | uORF | uoORF | CDS | 5′ UTR |
 |---|---:|---:|---:|---:|
 | Span count | 1 | 1 | 1 | 1 |
 | Without antisense alignments | 1 | 1 | 1 | 1 |
@@ -903,7 +903,7 @@ step, toward `orfs`. Totals over the 6 libraries, relative to the span count:
 - **The offsets** changed few counts: of the 1,315 uORFs with at least 10
   reads, none moved by more than 0.5 in log2.
 - **One count per read** removed 3.8% of the CDS total and 9.3% of the
-  leader total; the EM step left the CDS total unchanged.
+  5′ UTR total; the EM step left the CDS total unchanged.
 - **uoORFs** got 5.9 times the reads over their whole span; the EM and the
   frame term then left 20% of that to them.
 - **uORFs** lost most in the EM step, and the nested ones most of all
