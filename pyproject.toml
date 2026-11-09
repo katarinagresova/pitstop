@@ -18,6 +18,9 @@ docs = ["zensical; python_version >= '3.11'"]  # zensical needs Python 3.11+
 [tool.setuptools.dynamic]
 version = {attr = "pitstop.__version__"}
 
+[tool.setuptools.package-data]
+"pitstop.report" = ["page.html", "style.css", "script.js"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]

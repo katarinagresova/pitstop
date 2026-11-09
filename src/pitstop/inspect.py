@@ -31,7 +31,7 @@ two groups of 5' ends at the starts, and one offset puts the smaller group 1 nt 
 of `starts` only.
 The suggested read lengths: of the runs of consecutive clean lengths, the one with the most reads.
 
-Tables (<prefix>.<name>.tsv). The report (report.py) reads only these, so every number of the report is in a table.
+Tables (<prefix>.<name>.tsv). The report (report/inspect.py) reads only these, so every number of the report is in a table.
   lengths     per length: the reads and their share; the CDS-interior reads and their phases; the start peak (its reads,
               share and beside); the 3' ends at the stops the same way (nt from the first nt of the stop codon); the
               offset; the P-sites by region (shares); the class and mixed; after repair, the reads, top frame and

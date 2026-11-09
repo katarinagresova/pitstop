@@ -40,17 +40,20 @@ def visible_text(doc):
     return html.unescape(re.sub(r"<[^>]+>", " ", doc))
 
 
-def allowed_numbers(prefix):
-    """Every number of the tables, and every constant of inspect and report, as the page may format it."""
+def allowed_numbers(prefix, tables=("summary", "lengths", "anchors", "ends", "complexity"),
+                    modules=(inspect, report.inspect, report.base)):
+    """Every number of the tables, and every constant of the modules, as the page may format it."""
     values, strings = [], []
-    for name in ("summary", "lengths", "anchors", "ends", "complexity"):
+    for name in tables:
+        if not pathlib.Path(f"{prefix}.{name}.tsv").exists():
+            continue
         df = pd.read_csv(f"{prefix}.{name}.tsv", sep="\t", dtype=str, keep_default_na=False)
         for v in df.to_numpy().ravel():
             try:
                 values.append(float(v))
             except ValueError:
                 strings.append(v)
-    for mod in (inspect, report):
+    for mod in modules:
         for k, v in vars(mod).items():
             if k.isupper() and isinstance(v, (int, float, tuple)) and not isinstance(v, bool):
                 values += [x for x in (v if isinstance(v, tuple) else (v,)) if isinstance(x, (int, float))]
