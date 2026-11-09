@@ -30,6 +30,7 @@ import pysam
 
 from . import __version__, annotation, bam
 from .inspect import UNTEMPLATED_MAX
+from .tables import write_tsv
 
 log = logging.getLogger(__name__)
 
@@ -208,7 +209,7 @@ def run(bam_path, gtf, fasta, out_prefix):
     table = pd.DataFrame([(fp, k, counts[fp, k, True] + counts[fp, k, False], counts[fp, k, True])
                           for fp, k in sorted({(fp, k) for fp, k, _ in counts})],
                          columns=["length", "clipped", "alignments", "reads"])
-    table.to_csv(f"{out_prefix}.repair.tsv", sep="\t", index=False)
+    write_tsv(table, f"{out_prefix}.repair.tsv")
     seen = int(table["alignments"].sum())
     changed = table.loc[table["clipped"] > 0, ["alignments", "reads"]].sum()
     log.info("%s: repair clipped %d of %d alignments (%.2f%%), %d reads; not looked at: %s", bam_path,

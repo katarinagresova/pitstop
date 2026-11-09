@@ -19,6 +19,7 @@ one of the two), a McNemar statistic. On real data, every class whose offset
 changed between the even and the odd transcripts of a library had z < 4.
 """
 import logging
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -28,6 +29,13 @@ log = logging.getLogger(__name__)
 # The P-site codon must leave at least one codon (E-site) before it and one
 # (A-site) after it in the read.
 MIN_FLANK = 3
+
+
+class Window(NamedTuple):
+    """Three consecutive offsets of one read length, one per phase."""
+    score: float     # summed score of its offsets
+    centre: int
+    offsets: list    # offset per phase
 
 
 def read_weights(aln):
@@ -44,15 +52,15 @@ def counted(ds, phase, a, b):
 def phase_z(windows, phase, a, b, w):
     """z of the best window over each phase's rival; NaN if no window changes that phase."""
     best = windows[0]
-    best_in = counted(best[2], phase, a, b)
+    best_in = counted(best.offsets, phase, a, b)
     z = []
     for ph in range(3):
-        rival = next((win for win in windows[1:] if win[2][ph] != best[2][ph]), None)
+        rival = next((win for win in windows[1:] if win.offsets[ph] != best.offsets[ph]), None)
         if rival is None:
             z.append(np.nan)
             continue
-        disagree = w[best_in != counted(rival[2], phase, a, b)].sum()
-        z.append((best[0] - rival[0]) / np.sqrt(disagree) if disagree > 0 else 0.0)
+        disagree = w[best_in != counted(rival.offsets, phase, a, b)].sum()
+        z.append((best.score - rival.score) / np.sqrt(disagree) if disagree > 0 else 0.0)
     return z
 
 
@@ -79,17 +87,17 @@ def estimate_offsets(aln, anno, lengths, min_support):
     rows = []
     for length in range(lo, hi + 1):
         k0 = (length - lo) * 3
-        windows = []   # (summed score, centre, offset per phase), window inside the allowed offsets
+        windows = []   # the windows inside the allowed offsets
         for c in range(MIN_FLANK + 1, length - 3 - MIN_FLANK):
             ds = [next(d for d in (c - 1, c, c + 1) if (d + ph) % 3 == 0) for ph in range(3)]
-            windows.append((sum(score[k0 + ph, d] for ph, d in enumerate(ds)), c, ds))
-        windows.sort(key=lambda win: (-win[0], win[1]))
+            windows.append(Window(sum(score[k0 + ph, d] for ph, d in enumerate(ds)), c, ds))
+        windows.sort(key=lambda win: (-win.score, win.centre))
         sup = support[k0:k0 + 3].sum()
         ok = sup >= min_support and len(windows) > 0
         s = aln.length == length
         z = phase_z(windows, phase[s], a[s], b[s], w[s]) if ok else [np.nan] * 3
         for ph in range(3):
-            rows.append((length, ph, windows[0][2][ph] if ok else np.nan, support[k0 + ph], z[ph], total[k0 + ph]))
+            rows.append((length, ph, windows[0].offsets[ph] if ok else np.nan, support[k0 + ph], z[ph], total[k0 + ph]))
     df = pd.DataFrame(rows, columns=["length", "phase", "offset", "support", "z", "reads"])
     df["offset"] = df["offset"].astype("Int64")
     log.info("offsets for %d of %d (length, phase) classes", df["offset"].notna().sum(), len(df))

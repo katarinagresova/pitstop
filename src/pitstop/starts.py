@@ -69,18 +69,21 @@ peaks at codons that cannot start (null codons) have no shoulder.
 import logging
 import os
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 from scipy.special import betainc, gammainc
 
 from . import __version__, annotation
+from .annotation import CDS, INTERIOR, NO_CDS, REGIONS, UTR3, UTR5
+from .tables import write_stats, write_tsv
 
 log = logging.getLogger(__name__)
 
 GAP = 64
-REGIONS = ("5UTR", "CDS", "3UTR", "transcript")
-CLASSES = REGIONS + ("annotated",)   # BH classes: the annotated starts, the other candidates by region
+CLASSES = REGIONS + ("annotated",)   # BH classes: the other candidates by region, the annotated starts
+ANNOTATED = len(REGIONS)             # the class of the annotated starts
 START_CODONS = ("ATG", "CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATA", "ATC", "ATT")
 WIN = (-1, 3)        # a start's window: nt from its first nt, the start codon and the nt before it
 RAISED = (-3, 33)    # an annotated start's window and its codons 1-10: harringtonine raises them
@@ -92,7 +95,6 @@ KERNEL_END = 33
 MAX_SHIFT = 2        # calibration: a start peak this many nt or fewer from nt 0 can be moved onto it
 MIN_ANCHOR = 20      # calibration: P-sites at the start peak, summed over the annotated starts
 MIXED = 0.5          # a length is mixed when a nt beside its start peak has this share of the peak's P-sites or more
-INTERIOR = 15        # the frame: P-sites at least this many nt inside the CDS at both ends (as orfs.INTERIOR)
 MIN_FRAME = 100      # the frame decides (guard, fallback) only with this many P-sites inside the CDSs
 FRAME_GUARD = 1.5    # the frame is clear when its dominant frame has this many times the P-sites of the other
 WINDOW = (24, 34)    # start lengths: an 80S footprint is about 28 nt; the window keeps out short RNA fragments
@@ -109,6 +111,11 @@ PAIR_COLUMNS = ["pool", "harringtonine", "elongation", "distance"]
 PAIR_DISTANCE = 0.3  # pairs: a read-length distance this large or larger means another digestion (pairs of
                      # another digestion were at 0.59-0.74)
 CODON_COLUMNS = ["class", "codon", "tests", "test_share", "called", "call_share"]
+STARTS_COLUMNS = ["Name", "start", "codon", "region", "frame", "ORF_id", "harringtonine", "elongation", "expected",
+                  "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
+SCAN_COLUMNS = ["called", "stopped_by", "end", "type"]   # starts.tsv of a scan: STARTS_COLUMNS, then these
+ORF_COLUMNS = ["ORF_id", "Name", "start", "end", "type", "start_codon", "harringtonine", "elongation", "expected",
+               "enrichment", "p", "q", "shoulder"]       # start_orfs.tsv, catalogue.tsv
 STRIDE = WIN[1] - WIN[0]   # one null codon per window width for the null windows: they do not overlap
 FDR = 0.05           # the BH cut of a call
 MAX_MULTI = 0.5      # null windows: multimapped share of the window's reads below this
@@ -146,9 +153,9 @@ class Layout:
             tx[f:f + n] = i
             x = np.arange(n)
             if cs < 0:
-                region[f:f + n], dist[f:f + n] = 3, x
+                region[f:f + n], dist[f:f + n] = NO_CDS, x
             else:
-                region[f:f + n] = np.select([x < cs, x < ce], [0, 1], 2)
+                region[f:f + n] = np.select([x < cs, x < ce], [UTR5, CDS], UTR3)
                 dist[f:f + n] = np.select([x < cs, x < ce], [cs - x, (x - cs) // 3], x - ce)
         return tx, region, dist
 
@@ -156,6 +163,11 @@ class Layout:
         """Flat positions of the annotated starts, and their transcript indices."""
         i = np.flatnonzero(self.cds_start >= 0)
         return self.first[i] + self.cds_start[i], i
+
+    def flat(self, coord):
+        """Per transcript: the flat position of coord (a transcript coordinate per transcript, e.g. cds_start); -1
+        without an annotated CDS."""
+        return np.where(self.cds_start >= 0, self.first + coord, -1)
 
 
 ZONES = 6   # 5' UTR, CDS frame 0, 1 and 2, 3' UTR, transcript
@@ -165,7 +177,7 @@ def zone_index(layout, tx, region):
     """Per flat position: 5' UTR 0, CDS frame 0-2 1-3, 3' UTR 4, transcript 5; -1 in the gaps. The prior
     density of the elongation reads is per nt of a zone: a window holds one or two frame-0 nt of a CDS."""
     z = np.where(region < 0, -1, np.choose(np.maximum(region, 0), [0, 1, 4, 5])).astype(np.int8)
-    cds = np.flatnonzero(region == 1)
+    cds = np.flatnonzero(region == CDS)
     t = tx[cds]
     z[cds] = 1 + (cds - layout.first[t] - layout.cds_start[t]) % 3
     return z
@@ -225,10 +237,15 @@ def null_codons(bg, starts, near=NEAR):
     return c[(m[c + WIN[1]] - m[c + WIN[0]] == WIN[1] - WIN[0]) & (s[c + near[1] + 1] - s[c + near[0]] == 0)]
 
 
+class PSites(NamedTuple):
+    """P-sites, one per alignment."""
+    pos: np.ndarray       # flat position
+    length: np.ndarray    # read length
+    multi: np.ndarray     # the read has another alignment
+
+
 def read_psites(prefix, layout, lengths):
-    """Flat positions, read lengths and multimapper flags (the read has another alignment) of the P-sites
-    in <prefix>.psites.tsv (one per alignment) whose length is in [lo, hi] and whose transcript is in
-    the layout."""
+    """The P-sites in <prefix>.psites.tsv whose length is in [lo, hi] and whose transcript is in the layout."""
     first = pd.Series(layout.first, index=layout.names)
     ps = pd.read_csv(f"{prefix}.psites.tsv", sep="\t", dtype={"read": str, "Name": str, "psite": np.int64,
                                                               "length": np.int64})
@@ -236,8 +253,8 @@ def read_psites(prefix, layout, lengths):
     multi = ps["read"].duplicated(keep=False).to_numpy()
     f = ps["Name"].map(first).to_numpy()
     k = ~np.isnan(f)
-    return (f[k].astype(np.int64) + ps["psite"].to_numpy()[k], ps["length"].to_numpy()[k].astype(np.int16),
-            multi[k])
+    return PSites(f[k].astype(np.int64) + ps["psite"].to_numpy()[k], ps["length"].to_numpy()[k].astype(np.int16),
+                  multi[k])
 
 
 def window_sums(x, pos, win=WIN):
@@ -324,7 +341,8 @@ def region_counts(pos, length, region, lengths):
     lo, hi = lengths
     r = region[pos]
     k = (r >= 0) & (length >= lo) & (length <= hi)
-    return np.bincount((length[k] - lo) * 4 + r[k], minlength=(hi - lo + 1) * 4).reshape(-1, 4)
+    n_reg = len(REGIONS)
+    return np.bincount((length[k] - lo) * n_reg + r[k], minlength=(hi - lo + 1) * n_reg).reshape(-1, n_reg)
 
 
 def cds_bins(pos, length, tx, layout, lengths):
@@ -350,6 +368,24 @@ def interior_frames(pos, length, tx, layout, lengths):
     return np.bincount((length[k] - lo) * 3 + (x[k] - cs[k]) % 3, minlength=(hi - lo + 1) * 3).reshape(-1, 3)
 
 
+class LengthCounts(NamedTuple):
+    """One library's P-sites per read length."""
+    start: np.ndarray     # at nt PROFILE from the annotated starts (profile())
+    frames: np.ndarray    # per CDS frame, in the CDS interior (interior_frames())
+    regions: np.ndarray   # per region (region_counts())
+
+
+def peak_beside(prof, allowed):
+    """Per row of prof: the column of the peak among the allowed columns (allowed: (rows, columns) bool; the first if
+    tied), its value (0 if no column is allowed), and the values in the columns before and after it (0 off the
+    profile)."""
+    n = np.arange(len(prof))
+    i = np.argmax(np.where(allowed, prof, -1), axis=1)
+    at = np.where(allowed[n, i], prof[n, i], 0)
+    padded = np.pad(prof, ((0, 0), (1, 1)))
+    return i, at, padded[n, i], padded[n, i + 2]
+
+
 def calibrate(prof, frames, lengths, pair=None):
     """Per read length of one library (prof: P-sites at nt PROFILE from the annotated starts; frames: interior P-sites
     per CDS frame): the start peak, the frames, whether the length is calibrated, and its shift (the P-sites move by
@@ -365,10 +401,9 @@ def calibrate(prof, frames, lengths, pair=None):
     nt beside_nt) has MIXED of them or more (beside_share: beside_peak / at_peak)."""
     n = np.arange(len(prof))
     pair = np.zeros(len(prof), dtype=bool) if pair is None else np.asarray(pair, dtype=bool)
-    peak = np.argmax(prof[:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
-    at_peak = prof[n, peak - PROFILE[0]]
-    padded = np.pad(prof, ((0, 0), (1, 1)))   # a peak at nt -15 has no nt before it in the profile
-    before, after = padded[n, peak - PROFILE[0]], padded[n, peak - PROFILE[0] + 2]
+    to_kernel_end = np.arange(prof.shape[1]) < KERNEL_END - PROFILE[0]
+    col, at_peak, before, after = peak_beside(prof, np.broadcast_to(to_kernel_end, prof.shape))
+    peak = col + PROFILE[0]
     beside = np.maximum(before, after)
     beside_nt = np.where(before >= after, peak - 1, peak + 1)
     mixed = (at_peak >= MIN_ANCHOR) & (beside >= MIXED * at_peak)
@@ -467,13 +502,13 @@ def qc_profiles(start, stop, cds, lo):
 
 
 def shift_psites(psites, shift, lo, tx):
-    """P-sites (flat positions, lengths, multimapper flags) moved by the shift of their length (shift[length - lo]);
-    those that leave their transcript are dropped."""
+    """P-sites (PSites) moved by the shift of their length (shift[length - lo]); those that leave their transcript are
+    dropped."""
     pos, length, multi = psites
     new = pos + shift[length - lo]
     k = (new >= 0) & (new < len(tx))
     k[k] = tx[new[k]] == tx[pos[k]]
-    return new[k], length[k], multi[k]
+    return PSites(new[k], length[k], multi[k])
 
 
 def kernel(hp, ep):
@@ -513,8 +548,8 @@ def fit_pool(pool, tx, region, zone, bins, bg, null_pos, null_win, n_tx):
                  / (np.bincount(key, minlength=n_tx * ZONES) + PRIOR_NT))
     e = window_sums(pool.e, null_win)
     lam0 = prior_mean(pool, null_win, tx, zone)
-    pool.a = np.full(4, np.inf)
-    for r in range(4):
+    pool.a = np.full(len(REGIONS), np.inf)
+    for r in range(len(REGIONS)):
         k = region[null_win] == r
         inv = moments_nb(e[k].astype(float), lam0[k], lam0[k]) if k.any() else 0.0
         pool.a[r] = 1 / inv if inv > 0 else np.inf
@@ -528,6 +563,15 @@ def prior_mean(pool, pos, tx, zone):
         z = zone[pos + k]
         lam += np.where((z >= 0) & (tx[pos + k] == t), pool.dens[t * ZONES + np.maximum(z, 0)], 0.0)
     return lam
+
+
+class Moments(NamedTuple):
+    """Per window: its harringtonine and elongation reads, and the mean and variance (without phi) of its
+    harringtonine reads."""
+    h: np.ndarray
+    e: np.ndarray
+    mean: np.ndarray
+    var: np.ndarray
 
 
 def window_moments(pool, pos, tx, region, zone, bins):
@@ -544,7 +588,13 @@ def window_moments(pool, pos, tx, region, zone, bins):
     af = np.where(fin, a, 0.0)
     m = R * np.maximum(e, np.where(fin, (af + e) / (af / lam0 + 1), lam0))
     var = m + np.where(fin, m ** 2 / np.where(fin, af + e, 1), 0.0)
-    return window_sums(pool.h, pos), e, m, var
+    return Moments(window_sums(pool.h, pos), e, m, var)
+
+
+def pooled_moments(pools, pos, tx, region, zone, bins):
+    """window_moments() of the windows at pos, summed over the pools: pools add their means and variances."""
+    got = [window_moments(pl, pos, tx, region, zone, bins) for pl in pools.values()]
+    return Moments(*(sum(col) for col in zip(*got)))
 
 
 def nb_size(m, var, phi):
@@ -571,13 +621,18 @@ def calibrate_phi(h, m, var, region):
     d = depth_bin(m)
     every = tail_phi(h, m, var)
     phi = {}
-    for r in range(4):
+    for r in range(len(REGIONS)):
         k = region == r
         own = tail_phi(h[k], m[k], var[k]) if k.sum() >= MIN_NULL else every
         for b in range(len(DEPTH)):
             kb = k & (d == b)
             phi[r, b] = tail_phi(h[kb], m[kb], var[kb]) if kb.sum() >= MIN_NULL else own
     return phi
+
+
+def phi_stats(phi):
+    """phi as starts_stats.tsv rows."""
+    return {f"phi {REGIONS[r]} {DEPTH[b]}": value for (r, b), value in phi.items()}
 
 
 def window_phi(m, region, phi):
@@ -681,9 +736,195 @@ def codon_table(layout, tested, pos, cls, called):
     return pd.DataFrame(rows, columns=CODON_COLUMNS)
 
 
-def write_stats(st, out_prefix):
-    pd.DataFrame(list(st.items()), columns=["stat", "value"]).to_csv(f"{out_prefix}.starts_stats.tsv", sep="\t",
-                                                                     index=False)
+def class_tests(layout, tx, region, pos, cs_pos, scan, codons):
+    """The BH class (CLASSES) of each candidate at pos, and per class the number of its tests and their flat positions.
+    A scan tests every start codon (of `codons`) of the class, also those without harringtonine reads (p = 1)."""
+    cls = np.where(np.isin(pos, cs_pos), ANNOTATED, region[pos])
+    if scan:
+        every = np.flatnonzero(codon_mask(layout, codons) & (tx >= 0))
+        every = every[~np.isin(every, cs_pos)]
+        n_tests = np.r_[np.bincount(region[every], minlength=len(REGIONS)), len(cs_pos)]
+        tested = [every[region[every] == r] for r in range(len(REGIONS))] + [cs_pos]
+    else:
+        n_tests = np.bincount(cls, minlength=len(CLASSES))
+        tested = [pos[cls == c] for c in range(len(CLASSES))]
+    return cls, n_tests, tested
+
+
+def class_q(p, cls, n_tests):
+    """BH q per class: the candidates of class c (cls == c) among the n_tests[c] tests of the class."""
+    q = np.full(len(p), np.nan)
+    for c in range(len(CLASSES)):
+        k = cls == c
+        if k.any():
+            q[k] = bh(p[k], n_tests[c])
+    return q
+
+
+def class_stats(p, q, cls, n_tests, null_p, null_region, fdr):
+    """Per class: its tests, candidates and calls (q < fdr); the share of the null windows at or below the p of its
+    weakest call (the 5' UTR null windows for the 5' UTR class, the CDS null windows for the other classes), and the
+    false calls that share expects in its tests."""
+    stats = {}
+    for c, name in enumerate(CLASSES):
+        k = cls == c
+        if not k.any():
+            continue
+        calls = q[k] < fdr
+        cut = p[k][calls].max() if calls.any() else 0.0
+        kn = null_region == min(c, CDS)
+        rate = (null_p[kn] <= cut).mean() if kn.any() and cut > 0 else 0.0
+        stats.update({f"tests {name}": int(n_tests[c]), f"candidates {name}": int(k.sum()),
+                      f"q<{fdr:g} {name}": int(calls.sum()), f"null_rate_at_cut {name}": rate,
+                      f"expected_false {name}": rate * n_tests[c]})
+    return stats
+
+
+def scan_calls(out, pos, p, q, cls, layout, tx, fdr, stats):
+    """A scan's calls (near_starts() on q < fdr) and the ORF of each candidate to its first in-frame stop, typed
+    against the annotated CDS: adds called, stopped_by, end and type to out (the starts table), and the counts to
+    stats. Returns the ORFs of the called starts but the annotated ones (start_orfs.tsv), and the catalogue
+    (catalogue.tsv): the uORFs and uoORFs of the called starts, and every annotated CDS (end: the annotation's)."""
+    t = tx[pos].astype(np.int64)
+    start = pos - layout.first[t]
+    called, stopped_by = near_starts(pos, p, q < fdr, np.flatnonzero(cls == ANNOTATED))
+    stop = next_stops(layout)[pos + 3]
+    has_stop = (stop < layout.size) & (tx[np.minimum(stop, layout.size - 1)] == tx[pos])
+    end = np.where(has_stop, stop - layout.first[t], -1)
+    out["called"] = called
+    out["stopped_by"] = pd.Series(out["ORF_id"].to_numpy()[np.maximum(stopped_by, 0)]).where(stopped_by >= 0)
+    out["end"] = pd.Series(end, dtype="Int64").mask(~has_stop)
+    out["type"] = np.where(has_stop, orf_types(start, end, layout.cds_start[t], layout.cds_end[t]), "no stop")
+    typ = out["type"].to_numpy()
+    orfs = out[called & has_stop & (typ != "CDS")].rename(columns={"codon": "start_codon"})[ORF_COLUMNS]
+    cat = out[(called & np.isin(typ, ["uORF", "uoORF"])) | (typ == "CDS")].rename(columns={"codon": "start_codon"})
+    cat = cat.assign(end=np.where(cat["type"] == "CDS", layout.cds_end[t[cat.index]], cat["end"]))[ORF_COLUMNS]
+    stats.update({f"catalogue {k}": int(v) for k, v in cat["type"].value_counts().sort_index().items()})
+    stats.update(called=int(called.sum()), called_without_stop=int((called & ~has_stop).sum()),
+                 stopped=int((stopped_by >= 0).sum()))
+    stats.update({f"start_orfs {k}": int(v) for k, v in orfs["type"].value_counts().sort_index().items()})
+    return orfs, cat
+
+
+def shared_transcripts(prefixes):
+    """The transcripts in the orfs.tsv of every orfs run."""
+    names = None
+    for prefix in prefixes:
+        n = set(pd.read_csv(f"{prefix}.orfs.tsv", sep="\t", usecols=["Name"], dtype=str)["Name"])
+        names = n if names is None else names & n
+    return names
+
+
+def length_tables(psites, role, pool_of, layout, tx, region, cs_flat, ce_flat, lengths):
+    """The QC of each read length in each library (lengths.tsv but its columns qc and start_length) and the profiles
+    behind it (profiles.tsv), from the P-sites at the pool's offsets. psites, role, pool_of: per library."""
+    counts, profiles = {}, []
+    for prefix, (pos, length, _) in psites.items():
+        start = profile(pos, length, tx, cs_flat, lengths)
+        counts[prefix] = LengthCounts(start, interior_frames(pos, length, tx, layout, lengths),
+                                      region_counts(pos, length, region, lengths))
+        profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, lengths, STOP_PROFILE),
+                                    cds_bins(pos, length, tx, layout, lengths), lengths[0]).assign(library=prefix))
+    # one anchor per read length for all libraries: a pair if the length is mixed in half of the harringtonine
+    # libraries or more
+    pair = pair_lengths(pd.concat([calibrate(c.start, c.frames, lengths) for prefix, c in counts.items()
+                                   if role[prefix] == "harringtonine"]))
+    qc = []
+    for prefix, c in counts.items():
+        q = length_qc(c.start, c.frames, c.regions, lengths, pair).assign(library=prefix, pool=pool_of[prefix],
+                                                                         kind=role[prefix])
+        orfs_offset = pd.read_csv(f"{prefix}.frames.tsv", sep="\t").set_index("length")["offset"].astype("Int64")
+        q["offset"] = q["length"].map(orfs_offset).astype("Int64") + q["shift"]   # the offset the P-sites end at
+        qc.append(q)
+    table = pd.concat(qc, ignore_index=True)
+    interior = table[["frame0", "frame1", "frame2"]].sum(axis=1)
+    table["interior_share"] = interior / interior.groupby(table["library"]).transform("sum").clip(lower=1)
+    return table, pd.concat(profiles, ignore_index=True)[["library", "length", "anchor", "x", "frame", "psites"]]
+
+
+def pair_distances(sheet, table):
+    """pairs.tsv: per pair (a row of the sheet), the read-length distance: half the summed absolute difference of the
+    two libraries' interior_share (table: length_tables())."""
+    interior = table.pivot(index="length", columns="library", values="interior_share").fillna(0)
+    pairs = sheet[["pool", "harringtonine", "elongation"]].copy()
+    pairs["distance"] = [0.5 * float((interior[h] - interior[e]).abs().sum())
+                         for h, e in zip(pairs["harringtonine"], pairs["elongation"])]
+    return pairs[PAIR_COLUMNS]
+
+
+def library_table(psites, start_lengths, table, layout, tx, region, cs_pos, role, pool_of, lengths):
+    """libraries.tsv: per library, its start-length P-sites after the calibration, by region and by frame inside the
+    CDSs; the start peak, per start, over the P-sites per in-frame codon inside the CDSs (the codons that
+    interior_frames counts in frame 0). Not the stop peak: on real data it did not fade with harringtonine (7.5-20x
+    against 8-18x)."""
+    has = layout.cds_start >= 0
+    codons = int(((np.maximum(layout.cds_end[has] - layout.cds_start[has] - 2 * INTERIOR, 0) + 2) // 3).sum())
+    rows = []
+    for prefix, (pos, length, _) in psites.items():
+        k = np.isin(length, start_lengths)
+        reg = np.bincount(region[pos[k]], minlength=len(REGIONS))
+        fr = interior_frames(pos[k], length[k], tx, layout, lengths).sum(axis=0)
+        total = int(table.loc[table["library"] == prefix, "psites"].sum())
+        at_start = int(np.isin(pos[k], cs_pos).sum())
+        per_codon = fr[0] / max(codons, 1)
+        rows.append({"library": prefix, "pool": pool_of[prefix], "kind": role[prefix], "psites": total,
+                     "start_psites": int(k.sum()), "start_share": k.sum() / max(total, 1),
+                     **dict(zip(REGIONS, reg / max(reg.sum(), 1))), "interior": int(fr.sum()),
+                     **{f"frame{f}": x for f, x in enumerate(fr / max(fr.sum(), 1))}, "at_start": at_start,
+                     "start_enrichment": (at_start / len(cs_pos) / per_codon if per_codon > 0 and len(cs_pos)
+                                          else np.nan)})
+    return pd.DataFrame(rows, columns=LIBRARY_COLUMNS)
+
+
+def kernel_table(sheet, psites, tx, cs_flat, lengths):
+    """kernel.tsv: per pool and read length, the harringtonine and elongation P-sites (after the calibration) at nt
+    -15..32 from the annotated starts, and the kernel."""
+    lo, hi = lengths
+    prof = {prefix: profile(pos, length, tx, cs_flat, lengths) for prefix, (pos, length, _) in psites.items()}
+    nt = np.arange(PROFILE[0], KERNEL_END)
+    rows = []
+    for name, group in sheet.groupby("pool", sort=True):
+        hp = sum(prof[prefix] for prefix in group["harringtonine"])
+        ep = sum(prof[prefix] for prefix in group["elongation"])
+        for length, kr in zip(range(lo, hi + 1), kernel(hp, ep)):
+            i = length - lo
+            rows.append(pd.DataFrame({"pool": name, "length": length, "nt": nt,
+                                      "harringtonine": hp[i, :len(nt)], "elongation": ep[i, :len(nt)],
+                                      "kernel": kr}))
+    return pd.concat(rows, ignore_index=True)
+
+
+def make_pools(sheet, psites, start_lengths, size):
+    """Per pool (by name): the start-length P-sites per flat position, summed over its libraries (Pool)."""
+    pools = {}
+    for name, group in sheet.groupby("pool", sort=True):
+        sums = {kind: np.zeros(size, dtype=np.int64) for kind in ("harringtonine", "elongation", "multi")}
+        for kind in ("harringtonine", "elongation"):
+            for prefix in group[kind]:
+                pos, length, multi = psites[prefix]
+                k = np.isin(length, start_lengths)
+                sums[kind] += np.bincount(pos[k], minlength=size)
+                sums["multi"] += np.bincount(pos[k & multi], minlength=size)
+        pools[name] = Pool(sums["harringtonine"], sums["elongation"], sums["multi"])
+    return pools
+
+
+def null_windows(pools, nulls, layout, tx):
+    """The null codons with mostly unique reads (multimapped share below MAX_MULTI), and of those the null windows:
+    one null codon per STRIDE nt of a transcript, so the windows do not overlap."""
+    reads = sum(window_sums(pl.h, nulls) + window_sums(pl.e, nulls) for pl in pools.values())
+    multi = sum(window_sums(pl.multi, nulls) for pl in pools.values())
+    null_pos = nulls[multi < MAX_MULTI * np.maximum(reads, 1)]
+    null_win = null_pos[(null_pos - layout.first[tx[null_pos]]) % STRIDE == 0]
+    return null_pos, null_win
+
+
+def finish(stats, out_prefix, report):
+    """starts_stats.tsv, then the report (report/starts.py) if `report`."""
+    write_stats(stats, f"{out_prefix}.starts_stats.tsv")
+    if report:
+        from . import report as rpt
+        rpt.starts_report(out_prefix)
 
 
 def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_lengths=None, start_codons=None,
@@ -700,17 +941,19 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         raise ValueError("start codons choose the scan's candidates: give them with a scan")
     start_codons = START_CODONS if start_codons is None else tuple(start_codons)
     # the inputs, for the report: file names only, no paths
-    st = {"pitstop": __version__, "libraries_sheet": os.path.basename(sheet_path), "gtf": os.path.basename(gtf),
-          "fasta": os.path.basename(fasta), "candidates_from": "scan" if scan else os.path.basename(orfs_path),
-          "fdr": fdr, "length_window": f"{window[0]}-{window[1]}",
-          "start_lengths_given": "" if start_lengths is None else f"{start_lengths[0]}-{start_lengths[1]}"}
+    stats = {"pitstop": __version__, "libraries_sheet": os.path.basename(sheet_path), "gtf": os.path.basename(gtf),
+             "fasta": os.path.basename(fasta), "candidates_from": "scan" if scan else os.path.basename(orfs_path),
+             "fdr": fdr, "length_window": f"{window[0]}-{window[1]}",
+             "start_lengths_given": "" if start_lengths is None else f"{start_lengths[0]}-{start_lengths[1]}"}
     sheet = pd.read_csv(sheet_path, sep="\t", dtype=str)
     prefixes = list(sheet["harringtonine"]) + list(sheet["elongation"])
-    names = None
-    for p in prefixes:
-        n = set(pd.read_csv(f"{p}.orfs.tsv", sep="\t", usecols=["Name"], dtype=str)["Name"])
-        names = n if names is None else names & n
-    layout = make_layout(gtf, fasta, names)
+    role, pool_of = {}, {}   # per library: its kind and its pool
+    for kind in ("harringtonine", "elongation"):
+        for prefix, pool in zip(sheet[kind], sheet["pool"]):
+            role.setdefault(prefix, kind)
+            pool_of.setdefault(prefix, pool)
+
+    layout = make_layout(gtf, fasta, shared_transcripts(prefixes))
     tx, region, dist = layout.positions()
     bins = bin_index(region, dist)
     zone = zone_index(layout, tx, region)
@@ -718,230 +961,112 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     bg = background(layout, tx)
     nulls = null_codons(bg, codon_mask(layout))
     cs_pos, cs_tx = layout.cds_starts()
-    cs_flat = np.full(n_tx, -1, dtype=np.int64)
-    cs_flat[cs_tx] = cs_pos
-    st.update(pools=sheet["pool"].nunique(), libraries=len(prefixes), transcripts=n_tx,
-              transcripts_with_cds=len(cs_tx), null_codons=len(nulls))
+    cs_flat, ce_flat = layout.flat(layout.cds_start), layout.flat(layout.cds_end)
+    stats.update(pools=sheet["pool"].nunique(), libraries=len(prefixes), transcripts=n_tx,
+                 transcripts_with_cds=len(cs_tx), null_codons=len(nulls))
 
-    psites = {p: read_psites(p, layout, (0, np.iinfo(np.int16).max)) for p in prefixes}
-    lo = min(int(x[1].min()) for x in psites.values())
-    hi = max(int(x[1].max()) for x in psites.values())
-    role, pool_of = {}, {}
-    for kind in ("harringtonine", "elongation"):
-        for p, pool in zip(sheet[kind], sheet["pool"]):
-            role.setdefault(p, kind)
-            pool_of.setdefault(p, pool)
-    ce_flat = np.full(n_tx, -1, dtype=np.int64)
-    has = layout.cds_start >= 0
-    ce_flat[has] = layout.first[has] + layout.cds_end[has]
-    qc, profiles, counts = [], [], {}
-    for p, (pos, length, _) in psites.items():
-        start = profile(pos, length, tx, cs_flat, (lo, hi))
-        counts[p] = (start, interior_frames(pos, length, tx, layout, (lo, hi)), region_counts(pos, length, region,
-                                                                                            (lo, hi)))
-        profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
-                                    cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
-    # one anchor per read length for all libraries: a pair if the length is mixed in half of the harringtonine
-    # libraries or more
-    pair = pair_lengths(pd.concat([calibrate(*counts[p][:2], (lo, hi)) for p in psites if role[p] == "harringtonine"]))
-    for p, (start, frames, regions) in counts.items():
-        q = length_qc(start, frames, regions, (lo, hi), pair).assign(library=p, pool=pool_of[p], kind=role[p])
-        orfs_offset = pd.read_csv(f"{p}.frames.tsv", sep="\t").set_index("length")["offset"].astype("Int64")
-        q["offset"] = q["length"].map(orfs_offset).astype("Int64") + q["shift"]   # the offset the P-sites end at
-        qc.append(q)
-    table = pd.concat(qc, ignore_index=True)
-    n = table[["frame0", "frame1", "frame2"]].sum(axis=1)
-    table["interior_share"] = n / n.groupby(table["library"]).transform("sum").clip(lower=1)
+    # the QC of the read lengths, from the P-sites at the pool's offsets: the start lengths and the shifts
+    psites = {prefix: read_psites(prefix, layout, (0, np.iinfo(np.int16).max)) for prefix in prefixes}
+    lo = min(int(x.length.min()) for x in psites.values())
+    hi = max(int(x.length.max()) for x in psites.values())
+    table, profiles = length_tables(psites, role, pool_of, layout, tx, region, cs_flat, ce_flat, (lo, hi))
     verdict, chosen = choose_start_lengths(table, window)
     start_lengths = chosen if start_lengths is None else list(range(start_lengths[0], start_lengths[1] + 1))
     table["qc"] = table["length"].map(verdict)
     table["start_length"] = table["length"].isin(start_lengths)
-    table[LENGTH_COLUMNS].to_csv(f"{out_prefix}.lengths.tsv", sep="\t", index=False)
-    interior = table.pivot(index="length", columns="library", values="interior_share").fillna(0)
-    pairs = sheet[["pool", "harringtonine", "elongation"]].copy()
-    pairs["distance"] = [0.5 * float((interior[h] - interior[e]).abs().sum())
-                         for h, e in zip(pairs["harringtonine"], pairs["elongation"])]
-    pairs[PAIR_COLUMNS].to_csv(f"{out_prefix}.pairs.tsv", sep="\t", index=False)
-    pd.concat(profiles, ignore_index=True)[["library", "length", "anchor", "x", "frame", "psites"]].to_csv(
-        f"{out_prefix}.profiles.tsv", sep="\t", index=False)
+    write_tsv(table[LENGTH_COLUMNS], f"{out_prefix}.lengths.tsv")
+    write_tsv(pair_distances(sheet, table), f"{out_prefix}.pairs.tsv")
+    write_tsv(profiles, f"{out_prefix}.profiles.tsv")
     del profiles
     if not start_lengths:
-        st["start_lengths"] = ""
-        write_stats(st, out_prefix)
-        if report:
-            from . import report as rpt
-            rpt.starts_report(out_prefix)
+        stats["start_lengths"] = ""
+        finish(stats, out_prefix, report)
         raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated in "
                          f"every harringtonine library, a clear frame in every library): see "
                          f"{out_prefix}.lengths.tsv, or choose them with --start-lengths")
-    st["start_lengths"] = ",".join(map(str, start_lengths))
+    stats["start_lengths"] = ",".join(map(str, start_lengths))
     log.info("start lengths: %s", start_lengths)
-    shift = {p: g["shift"].to_numpy() for p, g in table.groupby("library", sort=False)}
-    psites = {p: shift_psites(x, shift[p], lo, tx) for p, x in psites.items()}
-    # per library: its start-length P-sites after the calibration, by region and by frame inside the CDSs; the start
-    # peak, per start, over the P-sites per in-frame codon inside the CDSs (the codons that interior_frames counts in
-    # frame 0). Not the stop peak: on real data it did not fade with harringtonine (7.5-20x against 8-18x)
-    codons = int(((np.maximum(layout.cds_end[has] - layout.cds_start[has] - 2 * INTERIOR, 0) + 2) // 3).sum())
-    rows = []
-    for p, (pos, length, _) in psites.items():
-        k = np.isin(length, start_lengths)
-        reg = np.bincount(region[pos[k]], minlength=4)
-        fr = interior_frames(pos[k], length[k], tx, layout, (lo, hi)).sum(axis=0)
-        total = int(table.loc[table["library"] == p, "psites"].sum())
-        at_start = int(np.isin(pos[k], cs_pos).sum())
-        per_codon = fr[0] / max(codons, 1)
-        rows.append([p, pool_of[p], role[p], total, int(k.sum()), k.sum() / max(total, 1)]
-                    + list(reg / max(reg.sum(), 1)) + [int(fr.sum())] + list(fr / max(fr.sum(), 1))
-                    + [at_start, at_start / len(cs_pos) / per_codon if per_codon > 0 and len(cs_pos) else np.nan])
-    pd.DataFrame(rows, columns=LIBRARY_COLUMNS).to_csv(f"{out_prefix}.libraries.tsv", sep="\t", index=False)
-    prof = {p: profile(pos, length, tx, cs_flat, (lo, hi)) for p, (pos, length, _) in psites.items()}
 
-    kern_rows = []
-    pools = {}
-    for name, rows in sheet.groupby("pool", sort=True):
-        hp = sum(prof[p] for p in rows["harringtonine"])
-        ep = sum(prof[p] for p in rows["elongation"])
-        nt = np.arange(PROFILE[0], KERNEL_END)
-        for length, kr in zip(range(lo, hi + 1), kernel(hp, ep)):
-            i = length - lo
-            kern_rows.append(pd.DataFrame({"pool": name, "length": length, "nt": nt,
-                                           "harringtonine": hp[i, :len(nt)], "elongation": ep[i, :len(nt)],
-                                           "kernel": kr}))
-        c = {kind: np.zeros(layout.size, dtype=np.int64) for kind in ("harringtonine", "elongation", "multi")}
-        for kind in ("harringtonine", "elongation"):
-            for p in rows[kind]:
-                pos, length, multi = psites[p]
-                k = np.isin(length, start_lengths)
-                c[kind] += np.bincount(pos[k], minlength=layout.size)
-                c["multi"] += np.bincount(pos[k & multi], minlength=layout.size)
-        pools[name] = Pool(c["harringtonine"], c["elongation"], c["multi"])
-        st[f"harringtonine_psites {name}"] = int(c["harringtonine"].sum())
-        st[f"elongation_psites {name}"] = int(c["elongation"].sum())
+    # the calibrated P-sites, per library and summed per pool
+    shift = {prefix: g["shift"].to_numpy() for prefix, g in table.groupby("library", sort=False)}
+    psites = {prefix: shift_psites(x, shift[prefix], lo, tx) for prefix, x in psites.items()}
+    write_tsv(library_table(psites, start_lengths, table, layout, tx, region, cs_pos, role, pool_of, (lo, hi)),
+              f"{out_prefix}.libraries.tsv")
+    kernels = kernel_table(sheet, psites, tx, cs_flat, (lo, hi))
+    pools = make_pools(sheet, psites, start_lengths, layout.size)
     del psites
+    for name, pl in pools.items():
+        stats[f"harringtonine_psites {name}"] = int(pl.h.sum())
+        stats[f"elongation_psites {name}"] = int(pl.e.sum())
 
-    reads = sum(window_sums(pl.h, nulls) + window_sums(pl.e, nulls) for pl in pools.values())
-    multi = sum(window_sums(pl.multi, nulls) for pl in pools.values())
-    null_pos = nulls[multi < MAX_MULTI * np.maximum(reads, 1)]
-    null_win = null_pos[(null_pos - layout.first[tx[null_pos]]) % STRIDE == 0]
-    st.update(null_codons_unique=len(null_pos), null_windows=len(null_win))
+    # the background of each pool and phi, from the null windows
+    null_pos, null_win = null_windows(pools, nulls, layout, tx)
+    stats.update(null_codons_unique=len(null_pos), null_windows=len(null_win))
     factors = []
     for name, pl in pools.items():
         fit_pool(pl, tx, region, zone, bins, bg, null_pos, null_win, n_tx)
         factors.append(pd.DataFrame({"pool": name, "bin": bin_names(), "factor": pl.f}))
-        st.update({f"prior_shape {name} {REGIONS[r]}": pl.a[r] for r in range(4)})
+        stats.update({f"prior_shape {name} {r}": a for r, a in zip(REGIONS, pl.a)})
+    null = pooled_moments(pools, null_win, tx, region, zone, bins)
+    null_region = region[null_win]
+    phi = calibrate_phi(null.h, null.mean, null.var, null_region)
+    stats.update(phi_stats(phi))
 
-    def pooled(pos):
-        got = [window_moments(pl, pos, tx, region, zone, bins) for pl in pools.values()]
-        return tuple(sum(g[i] for g in got) for i in range(4))
-
-    nh, _, nm, nv = pooled(null_win)
-    nr = region[null_win]
-    phi = calibrate_phi(nh, nm, nv, nr)
-    st.update({f"phi {REGIONS[r]} {DEPTH[b]}": v for (r, b), v in phi.items()})
-
+    # the test of the candidates; BH per class, over every candidate of the class
     if scan:
         pos = scan_candidates(layout, tx, pools, cs_pos, start_codons)
-        st.update(start_codons=",".join(start_codons), candidates=len(pos))
+        stats.update(start_codons=",".join(start_codons), candidates=len(pos))
     else:
         pos, ids, got = given_starts(orfs_path, layout)
-        st.update(got)
-    h, e, m, v = pooled(pos)
-    p = pvalues(h, m, v, region[pos], phi)
-    # BH per class, over every candidate of the class: a scan tests only the start codons with harringtonine
-    # reads, but the others are tests too (p = 1)
-    cls = np.where(np.isin(pos, cs_pos), 4, region[pos])
-    if scan:
-        every = np.flatnonzero(codon_mask(layout, start_codons) & (tx >= 0))
-        every = every[~np.isin(every, cs_pos)]
-        n_tests = np.r_[np.bincount(region[every], minlength=4), len(cs_pos)]
-        tested = [every[region[every] == c] for c in range(4)] + [cs_pos]
-    else:
-        n_tests = np.bincount(cls, minlength=5)
-        tested = [pos[cls == c] for c in range(5)]
-
-    def class_q(p):
-        q = np.full(len(p), np.nan)
-        for c in range(5):
-            k = cls == c
-            if k.any():
-                q[k] = bh(p[k], n_tests[c])
-        return q
-
+        stats.update(got)
+    h, e, m, var = pooled_moments(pools, pos, tx, region, zone, bins)
+    p = pvalues(h, m, var, region[pos], phi)
+    cls, n_tests, tested = class_tests(layout, tx, region, pos, cs_pos, scan, start_codons)
     if scan:
         # null windows clear of the called starts: harringtonine raises their codons 1-10, as for the annotated
         # starts. Call, drop the null windows in RAISED of the called starts, calibrate phi again, call again
-        called, _ = near_starts(pos, p, class_q(p) < fdr, np.flatnonzero(cls == 4))
-        keep = ~covered(layout.size, pos[called] + RAISED[0], pos[called] + RAISED[1])[null_win]
-        nh, nm, nv, nr = nh[keep], nm[keep], nv[keep], nr[keep]
-        phi = calibrate_phi(nh, nm, nv, nr)
-        p = pvalues(h, m, v, region[pos], phi)
-        st.update({f"phi {REGIONS[r]} {DEPTH[b]}": v for (r, b), v in phi.items()})
-        st["null_windows_near_called"] = int((~keep).sum())
-    null_p = pvalues(nh, nm, nv, nr, phi)
+        first_calls, _ = near_starts(pos, p, class_q(p, cls, n_tests) < fdr, np.flatnonzero(cls == ANNOTATED))
+        keep = ~covered(layout.size, pos[first_calls] + RAISED[0], pos[first_calls] + RAISED[1])[null_win]
+        null, null_region = Moments(*(x[keep] for x in null)), null_region[keep]
+        phi = calibrate_phi(null.h, null.mean, null.var, null_region)
+        p = pvalues(h, m, var, region[pos], phi)
+        stats.update(phi_stats(phi))
+        stats["null_windows_near_called"] = int((~keep).sum())
+    null_p = pvalues(null.h, null.mean, null.var, null_region, phi)
     ann = np.isin(pos, cs_pos) & (m >= 3)
     enrich = np.median(h[ann] / m[ann]) if ann.any() else np.nan
-    st["typical_enrichment"] = enrich
-    typical_p = (pvalues(np.ceil(enrich * m).astype(np.int64), m, v, region[pos], phi) if ann.any()
+    stats["typical_enrichment"] = enrich
+    typical_p = (pvalues(np.ceil(enrich * m).astype(np.int64), m, var, region[pos], phi) if ann.any()
                  else np.full(len(pos), np.nan))
     t = tx[pos].astype(np.int64)
-    nt = pos - layout.first[t]
+    start = pos - layout.first[t]
     out = pd.DataFrame({
-        "Name": layout.names[t], "start": nt,
+        "Name": layout.names[t], "start": start,
         "codon": [layout.seq[x:x + 3].tobytes().decode() for x in pos],
         "region": np.array(REGIONS)[region[pos]],
-        "frame": pd.Series((nt - layout.cds_start[t]) % 3, dtype="Int64").mask(layout.cds_start[t] < 0),
-        "ORF_id": [f"{n}_{x + 1}" for n, x in zip(layout.names[t], nt)] if scan else ids, "harringtonine": h, "elongation": e, "expected": m,
+        "frame": pd.Series((start - layout.cds_start[t]) % 3, dtype="Int64").mask(layout.cds_start[t] < 0),
+        "ORF_id": [f"{n}_{x + 1}" for n, x in zip(layout.names[t], start)] if scan else ids,
+        "harringtonine": h, "elongation": e, "expected": m,
         "enrichment": h / np.maximum(m, 1e-300), "p": p, "typical_p": typical_p,
         "multimapped": sum(window_sums(pl.multi, pos) for pl in pools.values())
         / np.maximum(sum(window_sums(pl.h, pos) + window_sums(pl.e, pos) for pl in pools.values()), 1),
         "shoulder": shoulder(pools.values(), pos),
     })
-    q_all = class_q(p)
-    out["q"] = q_all
-    for c in range(5):
-        k = cls == c
-        if k.any():
-            q = q_all[k]
-            cut = p[k][q < fdr].max() if (q < fdr).any() else 0.0
-            kn = nr == min(c, 1)            # annotated starts: the CDS null windows
-            rate = (null_p[kn] <= cut).mean() if kn.any() and cut > 0 else 0.0
-            st.update({f"tests {CLASSES[c]}": int(n_tests[c]), f"candidates {CLASSES[c]}": int(k.sum()),
-                       f"q<{fdr:g} {CLASSES[c]}": int((q < fdr).sum()), f"null_rate_at_cut {CLASSES[c]}": rate,
-                       f"expected_false {CLASSES[c]}": rate * n_tests[c]})
-    cols = ["Name", "start", "codon", "region", "frame", "ORF_id", "harringtonine", "elongation", "expected",
-            "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
+    q = class_q(p, cls, n_tests)
+    out["q"] = q
+    stats.update(class_stats(p, q, cls, n_tests, null_p, null_region, fdr))
+    columns = STARTS_COLUMNS
     if scan:
-        called, stopped_by = near_starts(pos, p, out["q"].to_numpy() < fdr, np.flatnonzero(cls == 4))
-        stop = next_stops(layout)[pos + 3]
-        has_stop = (stop < layout.size) & (tx[np.minimum(stop, layout.size - 1)] == tx[pos])
-        end = np.where(has_stop, stop - layout.first[t], -1)
-        out["called"] = called
-        out["stopped_by"] = pd.Series(out["ORF_id"].to_numpy()[np.maximum(stopped_by, 0)]).where(stopped_by >= 0)
-        out["end"] = pd.Series(end, dtype="Int64").mask(~has_stop)
-        out["type"] = np.where(has_stop, orf_types(nt, end, layout.cds_start[t], layout.cds_end[t]), "no stop")
-        cols += ["called", "stopped_by", "end", "type"]
-        orf_cols = ["ORF_id", "Name", "start", "end", "type", "start_codon", "harringtonine", "elongation",
-                    "expected", "enrichment", "p", "q", "shoulder"]
-        typ = out["type"].to_numpy()
-        orfs_out = out[called & has_stop & (typ != "CDS")].rename(columns={"codon": "start_codon"})[orf_cols]
-        # the catalogue: the uORFs and uoORFs of the called starts, and every annotated CDS (end: the annotation's)
-        cat = out[(called & np.isin(typ, ["uORF", "uoORF"])) | (typ == "CDS")].rename(columns={"codon": "start_codon"})
-        cat = cat.assign(end=np.where(cat["type"] == "CDS", layout.cds_end[t[cat.index]], cat["end"]))[orf_cols]
-        st.update({f"catalogue {k}": int(v) for k, v in cat["type"].value_counts().sort_index().items()})
-        cat.to_csv(f"{out_prefix}.catalogue.tsv", sep="\t", index=False, na_rep="NA")
-        st.update(called=int(called.sum()), called_without_stop=int((called & ~has_stop).sum()),
-                  stopped=int((stopped_by >= 0).sum()))
-        st.update({f"start_orfs {k}": int(v) for k, v in orfs_out["type"].value_counts().sort_index().items()})
-        orfs_out.to_csv(f"{out_prefix}.start_orfs.tsv", sep="\t", index=False, na_rep="NA")
-    codon_table(layout, tested, pos, cls, out["called"].to_numpy() if scan else out["q"].to_numpy() < fdr).to_csv(
-        f"{out_prefix}.start_codons.tsv", sep="\t", index=False)
-    out = out[cols]
-    log.info("%s", st)
-    out.to_csv(f"{out_prefix}.starts.tsv", sep="\t", index=False, na_rep="NA")
-    pd.concat(kern_rows, ignore_index=True).to_csv(f"{out_prefix}.kernel.tsv", sep="\t", index=False)
-    pd.concat(factors, ignore_index=True).to_csv(f"{out_prefix}.factors.tsv", sep="\t", index=False)
-    write_stats(st, out_prefix)
-    if report:
-        from . import report as rpt
-        rpt.starts_report(out_prefix)
-    return out, st
+        orfs, catalogue = scan_calls(out, pos, p, q, cls, layout, tx, fdr, stats)
+        write_tsv(catalogue, f"{out_prefix}.catalogue.tsv", na_rep="NA")
+        write_tsv(orfs, f"{out_prefix}.start_orfs.tsv", na_rep="NA")
+        columns = STARTS_COLUMNS + SCAN_COLUMNS
+    called = out["called"].to_numpy() if scan else q < fdr
+    write_tsv(codon_table(layout, tested, pos, cls, called), f"{out_prefix}.start_codons.tsv")
+    out = out[columns]
+    log.info("%s", stats)
+    write_tsv(out, f"{out_prefix}.starts.tsv", na_rep="NA")
+    write_tsv(kernels, f"{out_prefix}.kernel.tsv")
+    write_tsv(pd.concat(factors, ignore_index=True), f"{out_prefix}.factors.tsv")
+    finish(stats, out_prefix, report)
+    return out, stats

@@ -62,15 +62,16 @@ import pandas as pd
 import pysam
 
 from . import __version__, annotation, bam
+from .annotation import CDS, INTERIOR, NO_CDS, REGIONS, UTR3, UTR5
+# as in starts: a class needs MIN_FRAME CDS-interior reads; the start peak needs MIN_ANCHOR reads; mixed: beside the
+# start peak MIXED of its reads or more
+from .starts import MIN_ANCHOR, MIN_FRAME, MIXED, peak_beside
+from .tables import write_tsv
 
 log = logging.getLogger(__name__)
 
 K = bam.K            # positions from each read end in ends.tsv
-INTERIOR = 15        # the CDS interior: at least this many nt inside the CDS at both ends (as starts.INTERIOR)
-MIN_FRAME = 100      # a class needs this many CDS-interior reads (as starts.MIN_FRAME) ...
-MIN_SHARE = 0.003    # ... and this share of the reads: a few positions can give a tiny length any frame
-MIN_ANCHOR = 20      # the start peak needs this many reads (as starts.MIN_ANCHOR)
-MIXED = 0.5          # mixed: beside the start peak this share of its reads or more (as starts.MIXED)
+MIN_SHARE = 0.003    # a class also needs this share of the reads: a few positions can give a tiny length any frame
 CLEAN = 0.7          # clean: top frame this or more
 DEFAULT_OFFSET = 12  # the offset of a length with fewer than MIN_ANCHOR reads at the start peak
 SHORT = (20, 22)     # the short state: these lengths,
@@ -85,7 +86,6 @@ SHORT_MAX = 22       # short reads: this many nt or fewer
 DISOME = (50, 70)    # disomes
 BACKGROUND = (4, 8)  # the mismatch background: positions 4-7 from the end
 SUBSAMPLES = 10      # complexity: fractions 0.1, 0.2, ... 1
-REGIONS = ("5UTR", "CDS", "3UTR", "transcript")
 CODE = np.full(256, 4, dtype=np.uint8)
 for _i, _b in enumerate(b"ACGT"):
     CODE[_b] = _i
@@ -164,11 +164,8 @@ def profile(x, li, mask, w, window, n_len):
 def peaks(prof, window, allowed):
     """Per row: the position of the peak (the first if tied), its reads, and the larger nt beside it as a share of the
     peak. allowed: (rows, positions) bool."""
-    n = np.arange(len(prof))
-    i = np.argmax(np.where(allowed, prof, -1), axis=1)
-    at = np.where(allowed[n, i], prof[n, i], 0)
-    padded = np.pad(prof, ((0, 0), (1, 1)))
-    beside = np.maximum(padded[n, i], padded[n, i + 2])
+    i, at, before, after = peak_beside(prof, allowed)
+    beside = np.maximum(before, after)
     has = at > 0
     return (np.where(has, i + window[0], 0), at, np.where(has, beside / np.where(has, at, 1), np.nan), has)
 
@@ -193,8 +190,9 @@ def length_table(pos5, length, ctx, lengths):
     t_peak, t_at, t_beside, t_has = peaks(stop, STOP_WINDOW, np.ones(stop.shape, dtype=bool))
     offset = np.where(s_at >= MIN_ANCHOR, -s_peak, DEFAULT_OFFSET)
     psite = pos5 + offset[li]
-    region = np.where(coding, np.select([psite < cs, psite <= ce - 3], [0, 1], 2), 3)
-    regions = np.bincount(li * 4 + region, weights=w, minlength=n_len * 4).reshape(-1, 4)
+    region = np.where(coding, np.select([psite < cs, psite <= ce - 3], [UTR5, CDS], UTR3), NO_CDS)
+    n_reg = len(REGIONS)
+    regions = np.bincount(li * n_reg + region, weights=w, minlength=n_len * n_reg).reshape(-1, n_reg)
     share = lambda a, b: np.where(b > 0, a / np.where(b > 0, b, 1), np.nan)
     reg = share(regions, reads[:, None])
     top = share(phases.max(axis=1), interior)
@@ -203,7 +201,7 @@ def length_table(pos5, length, ctx, lengths):
     cls = np.select(
         [(interior < MIN_FRAME) | (reads < MIN_SHARE * reads.sum()),
          (L >= SHORT[0]) & (L <= SHORT[1]) & (s_peak == SHORT_PEAK) & (s_at >= MIN_ANCHOR)
-         & (np.nan_to_num(reg[:, 1]) >= SHORT_CDS),
+         & (np.nan_to_num(reg[:, CDS]) >= SHORT_CDS),
          np.nan_to_num(top) >= CLEAN],
         ["few reads", "short state", "clean"], "no frame")
     mixed = np.isin(cls, ["clean", "no frame"]) & (s_at >= MIN_ANCHOR) & (np.nan_to_num(s_beside) >= MIXED)
@@ -512,7 +510,7 @@ def summary(stats, aln, lengths_df, anchors_df, ends_df, cplx, reads_per_footpri
 
 
 def write(df, path):
-    df.round(6).to_csv(path, sep="\t", index=False, na_rep="NA")
+    write_tsv(df.round(6), path, na_rep="NA")
 
 
 def run(bam_path, gtf, fasta, out_prefix, report=True):

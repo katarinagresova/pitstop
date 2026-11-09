@@ -18,6 +18,7 @@ import pandas as pd
 import scipy.sparse as sp
 
 from . import annotation, bam, offsets
+from .tables import write_stats, write_tsv
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +117,16 @@ def em(unique, classes, counts, lengths, tol, max_iter):
     return alpha, steps, change, loglik(alpha)
 
 
+def run_em(unique, classes, counts, lengths, tol, max_iter, stats):
+    """em(), with its numbers in stats. Raises RuntimeError if it did not converge. Returns alpha."""
+    alpha, iterations, change, loglik = em(unique, classes, counts, lengths, tol, max_iter)
+    stats.update(em_iterations=iterations, em_last_max_change=change, em_tol=tol, em_loglik=loglik)
+    log.info("EM: %d iterations, last max change %.3g reads, log-likelihood %.6f", iterations, change, loglik)
+    if change >= tol:
+        raise RuntimeError(f"EM did not converge in {max_iter} iterations (last max change {change:.3g} reads)")
+    return alpha
+
+
 def tie_groups(unique, classes):
     """ORFs that no read tells apart: no unique reads, identical class membership and weights."""
     classes_t = classes.T.tocsr()
@@ -187,11 +198,7 @@ def quantify(bam_path, gtf, fasta, lengths, out_prefix, offsets_path=None, min_s
 
     unique, classes, counts = equivalence_classes(aln.read, aln.tx, len(anno.tx))
     stats.update(reads_unique=int(unique.sum()), reads_multi=int(counts.sum()), equivalence_classes=len(counts))
-    alpha, iterations, change, loglik = em(unique, classes, counts, anno.cds_len.astype(float), tol, max_iter)
-    stats.update(em_iterations=iterations, em_last_max_change=change, em_tol=tol, em_loglik=loglik)
-    log.info("EM: %d iterations, last max change %.3g reads, log-likelihood %.6f", iterations, change, loglik)
-    if change >= tol:
-        raise RuntimeError(f"EM did not converge in {max_iter} iterations (last max change {change:.3g} reads)")
+    alpha = run_em(unique, classes, counts, anno.cds_len.astype(float), tol, max_iter, stats)
 
     has_reads = (unique > 0) | (np.diff(classes.T.tocsr().indptr) > 0)
     ties = tie_groups(unique, classes)
@@ -207,17 +214,16 @@ def quantify(bam_path, gtf, fasta, lengths, out_prefix, offsets_path=None, min_s
         "ritpm": np.where(has_reads, density / density.sum() * 1e6, np.nan),
         "NumReads": np.where(has_reads, alpha, np.nan),
     })
-    quant.to_csv(f"{out_prefix}.quant.tsv", sep="\t", index=False, na_rep="NA")
-    offsets_df.to_csv(f"{out_prefix}.offsets.tsv", sep="\t", index=False, na_rep="NA")
-    pd.DataFrame([(anno.tx[t], anno.tx[g[0]]) for g in ties for t in g],
-                 columns=["Name", "tie_group"]).to_csv(f"{out_prefix}.ties.tsv", sep="\t", index=False)
-    pd.DataFrame({
+    write_tsv(quant, f"{out_prefix}.quant.tsv", na_rep="NA")
+    write_tsv(offsets_df, f"{out_prefix}.offsets.tsv", na_rep="NA")
+    write_tsv(pd.DataFrame([(anno.tx[t], anno.tx[g[0]]) for g in ties for t in g], columns=["Name", "tie_group"]),
+              f"{out_prefix}.ties.tsv")
+    write_tsv(pd.DataFrame({
         "read": np.array(aln.read_names, dtype=object)[aln.read],
         "Name": np.array(anno.tx, dtype=object)[aln.tx],
         "psite": psite,
         "length": aln.length,
-    }).to_csv(f"{out_prefix}.psites.tsv", sep="\t", index=False)
-    qc.to_csv(f"{out_prefix}.qc.tsv", sep="\t", index=False, na_rep="NA")
-    pd.DataFrame(list(stats.items()), columns=["stat", "value"]).to_csv(
-        f"{out_prefix}.stats.tsv", sep="\t", index=False)
+    }), f"{out_prefix}.psites.tsv")
+    write_tsv(qc, f"{out_prefix}.qc.tsv", na_rep="NA")
+    write_stats(stats, f"{out_prefix}.stats.tsv")
     return quant, offsets_df, stats

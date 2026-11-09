@@ -25,6 +25,7 @@ import pandas as pd
 from scipy import stats
 
 from . import orfs as orfs_mod
+from .tables import write_stats, write_tsv
 
 log = logging.getLogger(__name__)
 
@@ -170,8 +171,7 @@ def run(prefixes, out_prefix, frame_lengths=None):
     log.info("score lengths: %s", lengths)
     scores, decoys, st = score(libraries, lengths)
     log.info("%s", st)
-    scores.to_csv(f"{out_prefix}.scores.tsv", sep="\t", index=False, na_rep="NA")
-    decoys.to_csv(f"{out_prefix}.decoys.tsv", sep="\t", index=False, na_rep="NA")
-    pd.DataFrame(list(st.items()), columns=["stat", "value"]).to_csv(
-        f"{out_prefix}.score_stats.tsv", sep="\t", index=False)
+    write_tsv(scores, f"{out_prefix}.scores.tsv", na_rep="NA")
+    write_tsv(decoys, f"{out_prefix}.decoys.tsv", na_rep="NA")
+    write_stats(st, f"{out_prefix}.score_stats.tsv")
     return scores, decoys, st

@@ -17,6 +17,12 @@ import pysam
 log = logging.getLogger(__name__)
 
 STOPS = {"TAA", "TAG", "TGA"}
+# the regions of a transcript: 5' UTR, CDS (start codon to last sense codon), 3' UTR (the stop codon and after),
+# transcript (no annotated CDS); as integer codes, their indices
+REGIONS = ("5UTR", "CDS", "3UTR", "transcript")
+UTR5, CDS, UTR3, NO_CDS = range(len(REGIONS))
+# the CDS interior: at least this many nt inside the CDS at both ends, so no start or stop peaks
+INTERIOR = 15
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 _ATTR = {key: re.compile(rf'{key} "([^"]+)"') for key in ("transcript_id", "gene_id")}
 

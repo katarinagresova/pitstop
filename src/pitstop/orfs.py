@@ -27,12 +27,11 @@ import pandas as pd
 import pysam
 
 from . import annotation, bam, offsets, quant
+from .annotation import INTERIOR
+from .tables import write_stats, write_tsv
 
 log = logging.getLogger(__name__)
 
-# frame profiles use reads at least this many nt inside the CDS at both ends:
-# no start or stop peaks
-INTERIOR = 15
 ORF_TYPES = ("CDS", "uORF", "uoORF", "other")
 OUTSIDE_TYPES = ("5UTR", "3UTR", "transcript")
 
@@ -224,12 +223,7 @@ def run(bam_path, gtf, fasta, lengths, out_prefix, orfs_path=None, offsets_path=
     unique, classes, counts = quant.equivalence_classes(
         np.r_[aln.read[i], aln.read[m]], np.r_[k, comp_out], len(comps), np.r_[w_orf, np.ones(m.sum())])
     stats.update(reads_unique=int(unique.sum()), reads_multi=int(counts.sum()), equivalence_classes=len(counts))
-    alpha, iterations, change, loglik = quant.em(unique, classes, counts, comps["Length"].to_numpy(float),
-                                                 tol, max_iter)
-    stats.update(em_iterations=iterations, em_last_max_change=change, em_tol=tol, em_loglik=loglik)
-    log.info("EM: %d iterations, last max change %.3g reads, log-likelihood %.6f", iterations, change, loglik)
-    if change >= tol:
-        raise RuntimeError(f"EM did not converge in {max_iter} iterations (last max change {change:.3g} reads)")
+    alpha = quant.run_em(unique, classes, counts, comps["Length"].to_numpy(float), tol, max_iter, stats)
 
     has_reads = (unique > 0) | (np.diff(classes.T.tocsr().indptr) > 0)
     comps["NumReads"] = np.where(has_reads, alpha, np.nan)
@@ -249,20 +243,19 @@ def run(bam_path, gtf, fasta, lengths, out_prefix, orfs_path=None, offsets_path=
     codons.insert(0, "ORF_id", orfs["ORF_id"].to_numpy()[codons.pop("orf")])
     codons.columns = ["ORF_id", "codon", "length", "frame0", "frame1", "frame2"]
 
-    comps.sort_values(["Name", "start", "end", "ORF_id"], kind="stable").to_csv(
-        f"{out_prefix}.orfs.tsv", sep="\t", index=False, na_rep="NA")
-    offsets_df.to_csv(f"{out_prefix}.offsets.tsv", sep="\t", index=False, na_rep="NA")
-    frames.to_csv(f"{out_prefix}.frames.tsv", sep="\t", index=False, na_rep="NA")
-    codons.to_csv(f"{out_prefix}.codons.tsv", sep="\t", index=False)
+    write_tsv(comps.sort_values(["Name", "start", "end", "ORF_id"], kind="stable"), f"{out_prefix}.orfs.tsv",
+              na_rep="NA")
+    write_tsv(offsets_df, f"{out_prefix}.offsets.tsv", na_rep="NA")
+    write_tsv(frames, f"{out_prefix}.frames.tsv", na_rep="NA")
+    write_tsv(codons, f"{out_prefix}.codons.tsv")
     ids = comps["ORF_id"].to_numpy()
-    pd.DataFrame([(ids[t], ids[g[0]]) for g in ties for t in g],
-                 columns=["ORF_id", "tie_group"]).to_csv(f"{out_prefix}.ties.tsv", sep="\t", index=False)
-    pd.DataFrame({
+    write_tsv(pd.DataFrame([(ids[t], ids[g[0]]) for g in ties for t in g], columns=["ORF_id", "tie_group"]),
+              f"{out_prefix}.ties.tsv")
+    write_tsv(pd.DataFrame({
         "read": np.array(aln.read_names, dtype=object)[aln.read],
         "Name": np.array(aln.refs, dtype=object)[aln.ref],
         "psite": psite,
         "length": aln.length,
-    }).to_csv(f"{out_prefix}.psites.tsv", sep="\t", index=False)
-    pd.DataFrame(list(stats.items()), columns=["stat", "value"]).to_csv(
-        f"{out_prefix}.stats.tsv", sep="\t", index=False)
+    }), f"{out_prefix}.psites.tsv")
+    write_stats(stats, f"{out_prefix}.stats.tsv")
     return comps, frames, offsets_df, stats
