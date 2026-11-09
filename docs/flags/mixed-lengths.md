@@ -26,17 +26,18 @@ from its frame in the CDS interior, as for every length, because `quant`,
 
 ## Why the cut is there
 
-The cut is the same as the cut of `starts` for its start lengths: one group
-of 5′ ends with half of the other's reads or more. Which of the two
-nucleotides holds the peak can change between libraries of one experiment, so
-the offset of a mixed length is not stable at the starts.
+The cut is the same as the cut of `starts`: one group of 5′ ends with half
+of the other's reads or more. Which of the two nucleotides holds the peak can
+change between libraries of one experiment, so the peak alone is not a stable
+anchor at the starts.
 
 ## What to do
 
-- **Start sites.** Leave the mixed lengths out of the start lengths of
-  `pitstop starts`. `starts` checks this itself in each harringtonine library
-  and drops a length that is mixed in one of them. `--start-lengths`
-  overrides its choice.
+- **Start sites.** `pitstop starts` anchors a length that is mixed in half
+  of its harringtonine libraries or more on the pair of nucleotides, in every
+  library, so a mixed length can be a start length. Its `lengths.tsv` shows
+  the pair (`start_peak`, `beside_nt`, `pair`) and the move (`shift`).
+  `--start-lengths` overrides the choice of the start lengths.
 - **Counts and frame evidence.** Use the clean lengths, mixed or not. Their
   frame in the CDS decides.
 - If the flag [untemplated 5′ nt](untemplated.md) fails, the added nucleotide

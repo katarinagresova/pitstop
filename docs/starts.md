@@ -103,9 +103,20 @@ A length is **mixed** when a nt beside its start peak has half the peak's
 P-sites or more (with 20 P-sites or more at the peak). Its 5' ends then split
 between two offsets, often a long read with 1 extra nt at the 5' end or
 without it. A length has one offset, so the P-sites of the other half sit
-1 nt off. At a start this costs little, because a start's window is 4 nt
-(step 2). But it puts the other half 1 nt off at every other codon too, and
-whether the peak or its neighbour wins can change from library to library.
+1 nt off. Which of the two nt is larger can change from library to library,
+and the frame inside the CDSs can follow either half. So a single peak is
+not a stable anchor for such a length: one library would move it, the next
+would not.
+
+A length that is mixed in half of the harringtonine libraries or more is a
+**pair length**, in every library. Its anchor is the **pair**: the start peak
+and the larger nt beside it. The calibration moves the pair onto nt 0 and 1,
+the centre of a start's 4 nt window (step 2), whichever of the two is larger.
+The frame vetoes the move only when its dominant frame is neither frame of
+the pair (with 1.5 times the P-sites of the larger of the two). A pair length
+that is not calibrated moves by its frames if they are clear: the two
+consecutive frames with the most P-sites, each with 1.5 times the P-sites of
+the third, go onto frames 0 and 1.
 
 The **start lengths** come from a QC of each read length in each library. A
 start length:
@@ -114,26 +125,28 @@ start length:
   ribosome protects about 28 nt; shorter reads are mostly RNA fragments and
   other ribosome states, with a weak frame and harringtonine peaks that the
   elongation libraries do not have;
-- is calibrated, and not mixed, in every harringtonine library;
+- is calibrated in every harringtonine library;
 - has a **clear frame** in every library: 100 P-sites or more well inside the
   CDSs, and 40% or more of them in one frame (a third is no frame).
 
 Of the runs of consecutive lengths that pass, the run with the most P-sites
-wins. `--start-lengths` sets the start lengths instead, mixed lengths too.
+wins. `--start-lengths` sets the start lengths instead.
 Only their P-sites count, one per alignment, in both kinds of library.
 
 `lengths.tsv` has the QC, per library and length: the P-sites (all, their
 share of the library's, and per region), the P-sites per frame inside the
-CDSs, the start peak and the larger nt beside it, whether the length is mixed
-and calibrated, its move, its offset (the pool's offset plus the move), and
-the verdict (`pass`, or why not). `profiles.tsv` has the profiles behind it:
-per library and length, the P-sites around the annotated starts and stop
-codons and along the CDSs, from the pool's offsets, before the calibration.
-The report (`starts.html`, [Usage](usage.md#the-report-of-starts)) draws both:
-look at it before you trust the start lengths: a length that the calibration moves peaks at -1 or +1 in its
-library's profile, and its row gives its offset and the move; a mixed length
-has two nt with about the same P-sites at its peak (`beside_peak` close to
-`at_peak`).
+CDSs, the start peak and the larger nt beside it, whether the length is
+mixed, a pair length and calibrated, its move, its offset (the pool's offset
+plus the move), and the verdict (`pass`, or why not). `profiles.tsv` has the
+profiles behind it: per library and length, the P-sites around the annotated
+starts and stop codons and along the CDSs, from the pool's offsets, before
+the calibration. The report (`starts.html`,
+[Usage](usage.md#the-report-of-starts)) draws both: look at it before you
+trust the start lengths: a length that the calibration moves peaks at -1 or
++1 in its library's profile, and its row gives its offset and the move; a
+mixed length has two nt with about the same P-sites at its peak
+(`beside_peak` close to `at_peak`), and a pair length moves the pair
+(`start_peak` and `beside_nt`) onto nt 0 and 1.
 
 The **kernel** is the shape of a start: per length, the harringtonine P-sites
 minus the elongation P-sites (scaled on codons 11-20), as a share of nt -15
@@ -147,7 +160,7 @@ P-sites on nt 0, a few % on nt -1, and the rest on codons 1-10. A wider
 window, such as the codon +-1 codon, holds a few more of them, but it also
 holds nt 0 of the codon before or after. Then two start codons one codon
 apart get the same reads, and the scan cannot tell which one is used. With
-the narrow window, the start codon wins against its neighbours in 90-95% of
+the narrow window, the start codon wins against its neighbours in 91-95% of
 the annotated starts with 30 or more harringtonine P-sites in the three
 windows.
 
@@ -272,15 +285,15 @@ catalogue's ORFs in other libraries, and score their frames with
 - **Deep 5′ UTR starts.** The expected false calls in `starts_stats.tsv`
   come from the null windows of all depths, and most null windows are
   shallow. 5′ UTR windows with many expected reads have more peaks at codons
-  that cannot start. In the five pools of the validation, an estimated 11% of
-  the 5′ UTR calls with fewer than 30 expected reads are false, but 26% (95%
-  interval 7-64%) of those with 30 or more. Most deep calls (64%) also raise
+  that cannot start. In the five pools of the validation, an estimated 10% of
+  the 5′ UTR calls with fewer than 30 expected reads are false, but 24% (95%
+  interval 7-60%) of those with 30 or more. Most deep calls (64%) also raise
   their codons 1-5, as a used start does. Thus the deep calls stay in the
   output. Find them by `expected`, and look at their `shoulder` before you
   use one alone. For one start the shoulder is noisy: 28% of the annotated
   starts with 3 or more expected reads have a shoulder of 0 or less (median
-  1.0), and so do 43-56% of the null-codon peaks that reach the $p$ of a
-  call (median 0.0-0.2).
+  1.0), and so do 42-61% of the null-codon peaks that reach the $p$ of a
+  call (median -0.1 to 0.2).
 - **3′ UTRs.** Harringtonine libraries can hold RNA fragments that the
   elongation libraries do not have, mostly in 3′ UTRs and of short reads.
   `starts_stats.tsv` gives many expected false calls in 3′ UTRs; use those
@@ -296,36 +309,40 @@ experiment in two conditions), 15 harringtonine libraries and their 15
 elongation libraries, on a transcriptome with one transcript per gene (12,519
 with a CDS).
 
-- **Start lengths**: 26-29 nt. 30 nt is mixed in 14 of the 15 harringtonine
+- **Start lengths**: 26-30 nt. 30 nt is mixed in 14 of the 15 harringtonine
   libraries (the nt beside the start peak has 45-93% of its P-sites) and 25
-  nt in 13; 26-29 nt in none (37% or less). The kernel holds 37-54% of its
-  P-sites at nt 0 and 1-5% at nt -1.
-- **Background**: 5′ UTR factors are 1.3-3.3 near the CDS start and 0.7-1.6
-  300 nt or more before it; CDS factors are 0.16-0.49 at codons 20-200 and
-  0.8-0.9 at codons 700-1,000 (all against codons 1,000 and more).
+  nt in 13; 26-29 nt in none (37% or less). 30 nt is a pair length: its pair
+  is nt -1 and 0 in all 15, and it moves by +1 in all 15. 25 nt is a pair
+  length too, but it is not calibrated in 3 libraries (their peak is at
+  -3). The kernel of the start lengths holds 36-53% of its P-sites at nt 0
+  and 1-5% at nt -1; the kernel of 30 nt holds 35-73% at nt 0 and 1, and
+  0.6-1.1% at nt 2.
+- **Background**: 5′ UTR factors are 1.3-3.3 near the CDS start and 0.7-1.7
+  300 nt or more before it; CDS factors are 0.16-0.50 at codons 20-200 and
+  0.8-0.95 at codons 700-1,000 (all against codons 1,000 and more).
 - **Null windows** (held-out transcripts: $\phi$ from the null windows of
-  half the transcripts, $p$ of the other half): 0.14-0.15x alpha at
+  half the transcripts, $p$ of the other half): 0.14-0.16x alpha at
   $p \le 0.01$ and 0.8-0.9x alpha at $p \le 0.001$ in 5′ UTRs; 0.30-0.33x
-  and 0.9-1.1x in CDSs.
-- **Annotated starts** (scan): 60% called (7,526 of 12,519); 22% of those
-  with less than 0.3 expected reads in the window, 26% with 0.3-1, 54% with
-  1-3, 93% with 3 or more. Of the annotated starts with a call within 8 nt,
+  and 0.9x in CDSs.
+- **Annotated starts** (scan): 60% called (7,572 of 12,519); 25% of those
+  with less than 0.3 expected reads in the window, 27% with 0.3-1, 54% with
+  1-3, 94% with 3 or more. Of the annotated starts with a call within 8 nt,
   the call is on the annotated codon in 99.1%.
 - **Swaps**: with an elongation library as the "harringtonine" library of
   another replicate (replicate 3 on 2, and replicate 1 on 2, in each pool),
-  2 and 1 of the 12,519 annotated starts are called, and 127 and 134 5′ UTR
-  starts at q < 0.05 (6,105 with the harringtonine libraries).
-- **Start context**: called 5′ UTR starts have a purine at -3 in 66-69% and a
-  G at +4 in 45-52%; start codons in 5′ UTRs that are not called, at the
-  same depth, 54-58% and 30-35% ([Kozak 1986](#references)). The sequence
+  2 and 1 of the 12,519 annotated starts are called, and 104 and 128 5′ UTR
+  starts at q < 0.05 (6,321 with the harringtonine libraries).
+- **Start context**: called 5′ UTR starts have a purine at -3 in 65-69% and a
+  G at +4 in 46-52%; start codons in 5′ UTRs that are not called, at the
+  same depth, 54-58% and 30-34% ([Kozak 1986](#references)). The sequence
   plays no part in the test.
-- **5′ UTR calls**: 6,105 5′ UTR starts have q < 0.05, and the scan calls
-  4,692 of them (the near-start rule); the catalogue has 3,383 uORFs and 908
+- **5′ UTR calls**: 6,321 5′ UTR starts have q < 0.05, and the scan calls
+  4,848 of them (the near-start rule); the catalogue has 3,495 uORFs and 942
   uoORFs. False calls among the 5′ UTR calls, estimated per bin of expected
   reads (the null windows' rate at the cut times the 5′ UTR start codons of
-  the bin): 11% below 30 expected reads, 14% in all. At 30 or more expected
-  reads, the null codons of that depth give 26% (95% interval 7-64%). The
-  harringtonine reads in codons 1-5 after the call do not point to more: 36%
+  the bin): 10% below 30 expected reads, 13% in all. At 30 or more expected
+  reads, the null codons of that depth give 24% (95% interval 7-60%). The
+  harringtonine reads in codons 1-5 after the call do not point to more: 37%
   of the deep calls raise these codons more than 2-fold against the codons
   before the call, as do 36-41% of the calls with 1-30 expected reads. Too
   few null codons of that depth reach the cut (4) to give their share.

@@ -18,9 +18,13 @@ frame does not clearly put the P-sites elsewhere (FRAME_GUARD); its P-sites then
 frame alone cannot tell a codon (-1 and +2 are both frame 2), the start peak can. A length that is not
 calibrated moves by its frame if that is clear, else stays. A length is mixed when a nt beside its start peak has
 MIXED of the peak's P-sites or more: its 5' ends split between two offsets, and one offset puts the P-sites of the
-other 1 nt off. The start
+other 1 nt off. Which of the two nt is larger changes from library to library. So a length that is mixed in half of
+the harringtonine libraries or more is a pair length in every library: its anchor is the pair of the start peak and
+the larger nt beside it, and the calibration moves the pair onto nt 0 and 1, the centre of the window; the frame
+vetoes it only when it is clearly in neither frame of the pair, and without the anchor a clear frame pair moves onto
+frames 0 and 1. The start
 lengths come from a QC of each read length in each library: in WINDOW (an 80S footprint is about 28 nt; the window
-keeps out short RNA fragments), calibrated and not mixed in every harringtonine library, and periodic in every
+keeps out short RNA fragments), calibrated in every harringtonine library, and periodic in every
 library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of them in the top frame); of the runs of consecutive such
 lengths, the one with the most P-sites. Only their P-sites count, one per alignment. <prefix>.lengths.tsv has the
 QC and each length's offset (the orfs run's, plus the shift), <prefix>.profiles.tsv the profiles behind it
@@ -97,7 +101,7 @@ STOP_PROFILE = (-45, 15)   # QC profiles: nt from the first nt of the stop codon
 CDS_BINS = 20        # QC profiles: bins along the CDS
 LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "5UTR", "CDS", "3UTR", "transcript",
                   "frame0", "frame1", "frame2", "interior_share", "top_frame", "periodic", "start_peak", "at_peak",
-                  "beside_peak", "beside_nt", "beside_share", "mixed", "calibrated", "shift", "offset", "qc",
+                  "beside_peak", "beside_nt", "beside_share", "mixed", "pair", "calibrated", "shift", "offset", "qc",
                   "start_length"]
 LIBRARY_COLUMNS = ["library", "pool", "kind", "psites", "start_psites", "start_share", "5UTR", "CDS", "3UTR",
                    "transcript", "interior", "frame0", "frame1", "frame2", "at_start", "start_enrichment"]
@@ -346,41 +350,63 @@ def interior_frames(pos, length, tx, layout, lengths):
     return np.bincount((length[k] - lo) * 3 + (x[k] - cs[k]) % 3, minlength=(hi - lo + 1) * 3).reshape(-1, 3)
 
 
-def calibrate(prof, frames, lengths):
+def calibrate(prof, frames, lengths, pair=None):
     """Per read length of one library (prof: P-sites at nt PROFILE from the annotated starts; frames: interior P-sites
     per CDS frame): the start peak, the frames, whether the length is calibrated, and its shift (the P-sites move by
-    it). Calibrated: the start peak is within MAX_SHIFT nt of nt 0, has MIN_ANCHOR P-sites or more, and the frame is
-    not clearly against it (the dominant frame, with MIN_FRAME interior P-sites or more, has FRAME_GUARD times the
-    P-sites of the frame that the shift moves onto frame 0). Shift: minus the peak; for a length that is not
-    calibrated, the shift that moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), else 0.
-    Mixed: MIN_ANCHOR P-sites or more at the peak, and the larger of the two nt beside it (beside_peak, at nt beside_nt;
-    the nt before the peak if tied) has MIXED of them or more (beside_share: beside_peak / at_peak)."""
+    it). pair: per read length, True for a pair length (default: none). The anchor is the start peak, or for a pair
+    length the pair of the peak and the larger of the two nt beside it (beside_nt: the nt before the peak if tied), at
+    its first nt. Calibrated: the peak and the anchor are within MAX_SHIFT nt of nt 0, the peak has MIN_ANCHOR P-sites
+    or more, and the frame is not clearly against the anchor (the dominant frame, with MIN_FRAME interior P-sites or
+    more, is not a frame of the anchor and has FRAME_GUARD times the P-sites of the larger frame that the shift moves
+    onto frame 0 or, for a pair, 1). Shift: minus the anchor; for a length that is not calibrated, the shift that
+    moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), or for a pair length a clear frame pair (the
+    two consecutive frames with the most P-sites, the smaller with FRAME_GUARD times the third frame) onto frames 0 and
+    1, else 0. Mixed: MIN_ANCHOR P-sites or more at the peak, and the larger of the two nt beside it (beside_peak, at
+    nt beside_nt) has MIXED of them or more (beside_share: beside_peak / at_peak)."""
     n = np.arange(len(prof))
+    pair = np.zeros(len(prof), dtype=bool) if pair is None else np.asarray(pair, dtype=bool)
     peak = np.argmax(prof[:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
     at_peak = prof[n, peak - PROFILE[0]]
     padded = np.pad(prof, ((0, 0), (1, 1)))   # a peak at nt -15 has no nt before it in the profile
     before, after = padded[n, peak - PROFILE[0]], padded[n, peak - PROFILE[0] + 2]
     beside = np.maximum(before, after)
+    beside_nt = np.where(before >= after, peak - 1, peak + 1)
     mixed = (at_peak >= MIN_ANCHOR) & (beside >= MIXED * at_peak)
+    anchor = np.where(pair, np.minimum(peak, beside_nt), peak)
     total = frames.sum(axis=1)
     dominant = frames.argmax(axis=1)
-    against = (total >= MIN_FRAME) & (dominant != peak % 3) & (frames[n, dominant] >= FRAME_GUARD * frames[n, peak % 3])
-    calibrated = (np.abs(peak) <= MAX_SHIFT) & (at_peak >= MIN_ANCHOR) & ~against
+    own = (dominant == anchor % 3) | (pair & (dominant == (anchor + 1) % 3))
+    held = np.where(pair, np.maximum(frames[n, anchor % 3], frames[n, (anchor + 1) % 3]), frames[n, anchor % 3])
+    against = (total >= MIN_FRAME) & ~own & (frames[n, dominant] >= FRAME_GUARD * held)
+    # the peak too: a codon-1 peak at +3 with its neighbour at +2 is not a pair at the start codon
+    calibrated = (np.abs(peak) <= MAX_SHIFT) & (np.abs(anchor) <= MAX_SHIFT) & (at_peak >= MIN_ANCHOR) & ~against
     top2 = np.sort(frames, axis=1)[:, -2:]
     clear = (total >= MIN_FRAME) & (top2[:, 1] >= FRAME_GUARD * top2[:, 0])
-    shift = np.where(calibrated, -peak, np.where(clear, np.array([0, -1, 1])[dominant], 0))
+    duo = (frames + np.roll(frames, -1, axis=1)).argmax(axis=1)   # the frame pair (duo, duo + 1) with the most
+    clear_duo = (total >= MIN_FRAME) & (np.minimum(frames[n, duo], frames[n, (duo + 1) % 3])
+                                        >= FRAME_GUARD * frames[n, (duo + 2) % 3])
+    by_frame = np.where(pair, np.where(clear_duo, np.array([0, -1, 1])[duo], 0),
+                        np.where(clear, np.array([0, -1, 1])[dominant], 0))
+    shift = np.where(calibrated, -anchor, by_frame)
     return pd.DataFrame({"length": np.arange(lengths[0], lengths[1] + 1), "start_peak": peak, "at_peak": at_peak,
-                         "beside_peak": beside, "beside_nt": np.where(before >= after, peak - 1, peak + 1),
-                         "beside_share": beside / np.maximum(at_peak, 1), "mixed": mixed,
+                         "beside_peak": beside, "beside_nt": beside_nt, "beside_share": beside / np.maximum(at_peak, 1),
+                         "mixed": mixed, "pair": pair,
                          "frame0": frames[:, 0], "frame1": frames[:, 1], "frame2": frames[:, 2],
                          "calibrated": calibrated, "shift": shift})
 
 
-def length_qc(prof, frames, regions, lengths):
+def pair_lengths(mixed):
+    """Per read length (rows: the harringtonine libraries' calibrate() rows, columns length and mixed): a pair length
+    is mixed in half of these libraries or more."""
+    m = mixed.groupby("length")["mixed"]
+    return (2 * m.sum() >= m.size()).sort_index().to_numpy()
+
+
+def length_qc(prof, frames, regions, lengths, pair=None):
     """Per read length of one library: calibrate()'s columns, the P-sites (all, their share of the library's, and per
     region), the top frame's share of the CDS-interior P-sites, and whether the length is periodic (MIN_FRAME
     interior P-sites or more, MIN_TOP of them in the top frame)."""
-    out = calibrate(prof, frames, lengths)
+    out = calibrate(prof, frames, lengths, pair)
     psites = regions.sum(axis=1)
     interior = frames.sum(axis=1)
     top = frames.max(axis=1) / np.maximum(interior, 1)
@@ -395,13 +421,11 @@ def length_qc(prof, frames, regions, lengths):
 
 def choose_start_lengths(table, window):
     """The QC verdict per read length ("pass", or why not) and the start lengths. table: length_qc's rows of every
-    library, with kind. A start length is in the window, calibrated and not mixed in every harringtonine library and
-    periodic in every library; of the runs of consecutive such lengths, the one with the most P-sites (the first if
-    tied)."""
+    library, with kind. A start length is in the window, calibrated in every harringtonine library and periodic in
+    every library; of the runs of consecutive such lengths, the one with the most P-sites (the first if tied)."""
     harr = table["kind"] == "harringtonine"
     n_harr, n_lib = table.loc[harr, "library"].nunique(), table["library"].nunique()
     uncal = (~table.loc[harr, "calibrated"]).groupby(table.loc[harr, "length"]).sum()
-    mixed = table.loc[harr, "mixed"].groupby(table.loc[harr, "length"]).sum()
     aperiodic = (~table["periodic"]).groupby(table["length"]).sum()
     reads = table.groupby("length")["psites"].sum()
     why = {}
@@ -411,8 +435,6 @@ def choose_start_lengths(table, window):
             r.append(f"outside the window {window[0]}-{window[1]}")
         if uncal.get(length, 0):
             r.append(f"not calibrated in {uncal[length]} of {n_harr} harringtonine libraries")
-        if mixed.get(length, 0):
-            r.append(f"mixed offsets in {mixed[length]} of {n_harr} harringtonine libraries")
         if aperiodic[length]:
             r.append(f"no clear frame in {aperiodic[length]} of {n_lib} libraries")
         why[int(length)] = "; ".join(r)
@@ -712,17 +734,21 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     ce_flat = np.full(n_tx, -1, dtype=np.int64)
     has = layout.cds_start >= 0
     ce_flat[has] = layout.first[has] + layout.cds_end[has]
-    qc, profiles = [], []
+    qc, profiles, counts = [], [], {}
     for p, (pos, length, _) in psites.items():
         start = profile(pos, length, tx, cs_flat, (lo, hi))
-        q = length_qc(start, interior_frames(pos, length, tx, layout, (lo, hi)),
-                      region_counts(pos, length, region, (lo, hi)), (lo, hi)).assign(library=p, pool=pool_of[p],
-                                                                                      kind=role[p])
+        counts[p] = (start, interior_frames(pos, length, tx, layout, (lo, hi)), region_counts(pos, length, region,
+                                                                                            (lo, hi)))
+        profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
+                                    cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
+    # one anchor per read length for all libraries: a pair if the length is mixed in half of the harringtonine
+    # libraries or more
+    pair = pair_lengths(pd.concat([calibrate(*counts[p][:2], (lo, hi)) for p in psites if role[p] == "harringtonine"]))
+    for p, (start, frames, regions) in counts.items():
+        q = length_qc(start, frames, regions, (lo, hi), pair).assign(library=p, pool=pool_of[p], kind=role[p])
         orfs_offset = pd.read_csv(f"{p}.frames.tsv", sep="\t").set_index("length")["offset"].astype("Int64")
         q["offset"] = q["length"].map(orfs_offset).astype("Int64") + q["shift"]   # the offset the P-sites end at
         qc.append(q)
-        profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
-                                    cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
     table = pd.concat(qc, ignore_index=True)
     n = table[["frame0", "frame1", "frame2"]].sum(axis=1)
     table["interior_share"] = n / n.groupby(table["library"]).transform("sum").clip(lower=1)
@@ -745,8 +771,8 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         if report:
             from . import report as rpt
             rpt.starts_report(out_prefix)
-        raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated and not "
-                         f"mixed in every harringtonine library, a clear frame in every library): see "
+        raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated in "
+                         f"every harringtonine library, a clear frame in every library): see "
                          f"{out_prefix}.lengths.tsv, or choose them with --start-lengths")
     st["start_lengths"] = ",".join(map(str, start_lengths))
     log.info("start lengths: %s", start_lengths)

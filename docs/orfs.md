@@ -697,7 +697,8 @@ are not shipped with pitstop; the numbers come from its validation runs.
   every library; those runs give `--frame-lengths 27-28`
   ([Which read lengths](#which-read-lengths)).
 - **The catalogue**: the start scan of [Start sites](starts.md), on the 15
-  harringtonine libraries matched to the 15: 4,291 ORFs, 3,383 uORFs and 908
+  harringtonine libraries matched to the 15, at the start lengths 26-29 nt
+  (`--start-lengths 26-29`): 4,291 ORFs, 3,383 uORFs and 908
   uoORFs, with start codons ATG 1,722, CTG 1,005, GTG 441, AGG 257, ACG
   217, TTG 198, AAG 173, ATT 111, ATC 93 and ATA 74, and a median length of
   51 nt. Added to it: the ORF that starts at the 5′ UTR CUG of [A peak is not

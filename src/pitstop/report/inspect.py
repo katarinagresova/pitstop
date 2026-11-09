@@ -318,11 +318,12 @@ def next_steps(s, t):
                     "ribosomes with an open A site.", None))
     mixed = int_list(s["mixed_lengths"])
     if mixed:
-        out.append((f"Mixed lengths: {span(mixed)} nt. Leave them out of the start lengths.",
+        out.append((f"Mixed lengths: {span(mixed)} nt. Check their start anchor in `pitstop starts`.",
                     "At the annotated starts, the nucleotide beside the 5′-end peak of these lengths holds "
                     f"{qc.MIXED} of the peak's reads or more: two groups of 5′ ends, and one offset puts the smaller "
-                    "group 1 nt off (see the ends at the starts and stops). Their frame in the CDS decides if they "
-                    "are clean, as for the other lengths."
+                    "group 1 nt off (see the ends at the starts and stops). `pitstop starts` anchors such a length "
+                    "on both nucleotides, so it can be a start length. Their frame in the CDS decides if they are "
+                    "clean, as for the other lengths."
                     + (" The added 5′ nucleotide can cause this: inspect the repaired BAM."
                        if st["untemplated"] == "fail" else ""), None))
     if st["low_complexity"] == "warn":

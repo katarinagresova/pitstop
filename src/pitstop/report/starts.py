@@ -93,9 +93,10 @@ def window_lengths(t, stats):
     return sorted(int(x) for x in t.loc[keep, "length"].unique()) or sorted(int(x) for x in t["length"].unique())
 
 
-def moved_lengths(t, chosen, library=None):
-    """The start lengths that the calibration moves in a harringtonine library (or in `library`): [(length, shift)]."""
-    m = t[(t["kind"] == "harringtonine") & t["length"].isin(chosen) & (t["shift"] != 0)]
+def moved_lengths(t, chosen, library=None, pair=False):
+    """The start lengths that the calibration moves in a harringtonine library (or in `library`): [(length, shift)].
+    pair: the pair lengths only, else the others."""
+    m = t[(t["kind"] == "harringtonine") & t["length"].isin(chosen) & (t["shift"] != 0) & (t["pair"] == pair)]
     if library is not None:
         m = m[m["library"] == library]
     return sorted({(int(x), int(v)) for x, v in zip(m["length"], m["shift"])})
@@ -543,7 +544,7 @@ def atg_line(cod, c, label):
     return f"{label}: ATG is {pct(r['call_share'])} of the calls and {pct(r['test_share'])} of the tests"
 
 
-def start_checks(d, chosen, mixed, moved, pairs):
+def start_checks(d, chosen, mixed, paired, moved, pairs):
     """(name, state, value, basis, section) per check. Only the pairs have a cut of their own."""
     stats, t = d["stats"], d["t"]
     lo, hi = length_window(stats)
@@ -563,12 +564,16 @@ def start_checks(d, chosen, mixed, moved, pairs):
              f"{span(chosen)} nt" if chosen else "none",
              f"given; the QC passes {span(passing)} nt" if stats["start_lengths_given"] else
              f"the QC, in the window {lo}–{hi} nt", "lengths"),
-            ("Mixed lengths", "info" if mixed else "pass", ", ".join(f"{x} nt" for x in mixed) or "none",
-             f"beside the start peak ≥ {sx.MIXED} of it, in a harringtonine library", "lengths")]
+            ("Mixed lengths", "info" if mixed else "pass",
+             ", ".join(f"{x} nt" + (" (pair)" if x in paired else "") for x in mixed) or "none",
+             f"beside the start peak ≥ {sx.MIXED} of it, in a harringtonine library; a pair length in half of them "
+             "or more", "lengths")]
     if chosen:
-        out.append(("Calibration", "info" if moved else "pass",
-                    "; ".join(f"{x} nt moved {nt(v)}" for x, v in moved) or "no start length moved",
-                    f"harringtonine start peak within {sx.MAX_SHIFT} nt of nt 0", "lengths"))
+        moves = moved + moved_lengths(t, chosen, pair=True)
+        out.append(("Calibration", "info" if moves else "pass",
+                    "; ".join(f"{x} nt moved {nt(v)}" + (" (pair)" if x in paired else "") for x, v in sorted(moves))
+                    or "no start length moved",
+                    f"harringtonine start peak within {sx.MAX_SHIFT} nt of nt 0; a pair onto nt 0 and 1", "lengths"))
         key = f"q<{float(stats['fdr']):g} annotated"
         out.append(("Annotated starts", "info", f"{count(float(stats[key]))} of "
                     f"{count(float(stats['tests annotated']))} called", f"q < {stats['fdr']}", "calls"))
@@ -580,7 +585,7 @@ def start_checks(d, chosen, mixed, moved, pairs):
     return out
 
 
-def start_steps(d, name, mixed, moved, pairs):
+def start_steps(d, name, mixed, paired, moved, pairs):
     """(used, steps), each a list of (title, text) in order: what this run did, and what to do about it."""
     stats, t = d["stats"], d["t"]
     out, used = [], []
@@ -602,24 +607,28 @@ def start_steps(d, name, mixed, moved, pairs):
     if not chosen:
         out.append(("No read length passes the QC, so starts stopped.",
                     f"A start length must be in the window {lo}–{hi} nt, peak within {sx.MAX_SHIFT} nt of the "
-                    "annotated starts and not be mixed in every harringtonine library, and have a clear frame in every "
-                    "library. Start lengths says why each length fails. Choose the start lengths by hand with "
-                    "--start-lengths LO-HI, or leave out the pair that fails, and run starts again."))
+                    "annotated starts in every harringtonine library, and have a clear frame in every library. Start "
+                    "lengths says why each length fails. Choose the start lengths by hand with --start-lengths LO-HI, "
+                    "or leave out the pair that fails, and run starts again."))
     elif stats["start_lengths_given"]:
         used.append((f"Start lengths given: {span(chosen)} nt.",
                      f"The QC passes {span(passing)} nt. Check the given lengths in each pair: the P-sites of a start "
                      "length peak at nt 0 of the annotated starts, in frame 0."))
     else:
         used.append((f"This run used the start lengths {span(chosen)} nt.",
-                     f"Of the lengths in the window {lo}–{hi} nt, these are calibrated and not mixed in every "
-                     "harringtonine library, and have a clear frame in every library (the run of such lengths with the "
+                     f"Of the lengths in the window {lo}–{hi} nt, these are calibrated in every harringtonine "
+                     "library, and have a clear frame in every library (the run of such lengths with the "
                      "most P-sites). Only their P-sites count. You do not need to pass them on; --start-lengths LO-HI "
                      "chooses them by hand."))
     if mixed:
-        used.append((f"Mixed lengths: {span(mixed)} nt. They are not start lengths.",
+        used.append((f"Mixed lengths: {span(mixed)} nt." + (" All are pair lengths." if paired == mixed else
+                                                             f" Pair lengths: {span(paired)} nt." if paired else ""),
                      "In some harringtonine libraries the nucleotide beside the start peak holds half of the peak's "
-                     "P-sites or more: two groups of 5′ ends, and one offset puts the smaller group 1 nt off. The "
-                     "inspect report of the library shows them too."))
+                     "P-sites or more: two groups of 5′ ends, and one offset puts the smaller group 1 nt off. A length "
+                     "that is mixed in half of the harringtonine libraries or more is a pair length: in every library, "
+                     "starts anchors it on the peak and the nucleotide beside it, and moves the two onto nt 0 and 1 "
+                     "of the start codon, the centre of a start's window. The inspect report of the library shows the "
+                     "mixed lengths too."))
     if moved:
         used.append(("Some initiation libraries need other offsets.",
                      "The calibration moves the P-sites of " + ", ".join(f"{x} nt by {nt(v)}" for x, v in moved)
@@ -664,6 +673,11 @@ def pair_panel(d, r, L, chosen, charts, i):
         items.append(("info", f"The start lengths hold {pct(a['start_share'])} of the initiation library's P-sites "
                               f"and {pct(b['start_share'])} of the elongation library's."))
     moved = moved_lengths(t, chosen, r["harringtonine"])
+    paired = moved_lengths(t, chosen, r["harringtonine"], pair=True)
+    if paired:
+        items.append(("info", "The calibration moves the pair lengths "
+                      + ", ".join(f"{x} nt by {nt(v)}" for x, v in paired)
+                      + " in the initiation library: their two groups of 5′ ends go onto nt 0 and 1."))
     if moved:
         items.append(("info", "The calibration moves the initiation library's "
                       + ", ".join(f"{x} nt by {nt(v)}" for x, v in moved)
@@ -791,6 +805,7 @@ def starts_report(prefix):
     lo, hi = length_window(stats)
     harr = t[(t["kind"] == "harringtonine") & t["length"].isin(L)]
     mixed = sorted(int(x) for x in harr.loc[harr["mixed"], "length"].unique())
+    paired = sorted(int(x) for x in harr.loc[harr["pair"], "length"].unique())
     moved = moved_lengths(t, chosen)
     pools = list(dict.fromkeys(libs["pool"]))
     first = [x for x in L if x in chosen] or L                   # the start lengths show, the others are folded
@@ -814,7 +829,7 @@ def starts_report(prefix):
         files += [f"{name}.{x}" for x in ("libraries.tsv", "kernel.tsv", "start_codons.tsv", "starts.tsv")]
         if stats["candidates_from"] == "scan":
             files += [f"{name}.{x}" for x in ("start_orfs.tsv", "catalogue.tsv")]
-    checks = start_checks(d, chosen, mixed, moved, pairs)
+    checks = start_checks(d, chosen, mixed, paired, moved, pairs)
     worst = lambda r: next(s for s in ("fail", "warn", "info", "unknown", "pass") if s in (r["digestion"], r["drug"]))
     side = (f"<div>{LOCKUP}</div>\n<div><div class=\"kind\">starts report</div><div class=\"lib\">{esc(name)}</div>"
             "</div>\n<div><h3>Checks</h3><ul class=\"flaglist\">"
@@ -840,7 +855,7 @@ def starts_report(prefix):
             + (f"{span(chosen)} nt" + (" (given)" if stats["start_lengths_given"] else "") if chosen else "none")
             + f" (window {lo}–{hi} nt)</dd></dl></header>\n")
 
-    used, todo = start_steps(d, name, mixed, moved, pairs)
+    used, todo = start_steps(d, name, mixed, paired, moved, pairs)
     items = lambda xs: "".join(f'<li><div class="t">{esc(title)}</div><p>{esc(text)}</p></li>' for title, text in xs)
     steps = (f'<h3>Used in this run</h3><ul class="steps">{items(used)}</ul>' if used else "") \
         + f'<h3>Next steps</h3><ol class="steps">{items(todo)}</ol>'
@@ -918,8 +933,8 @@ def starts_report(prefix):
         findings(len_find)
         + f'<div class="panel scroll">{html_table(per_length, ["Length"], cls="len", on=on)}<p class="note">The QC of '
           f"each read length in the window, over all libraries. A start length is in the window {lo}–{hi} nt, its "
-          f"P-sites peak within {sx.MAX_SHIFT} nt of the annotated starts ({sx.MIN_ANCHOR} P-sites or more there) and "
-          f"the nt beside the peak holds less than {sx.MIXED} of the peak in every harringtonine library, and "
+          f"P-sites peak within {sx.MAX_SHIFT} nt of the annotated starts ({sx.MIN_ANCHOR} P-sites or more there; "
+          "for a pair length, the nt beside the peak too) in every harringtonine library, and "
           f"{sx.MIN_FRAME} P-sites or more inside the CDS have {sx.MIN_TOP} or more in their top frame in every "
           "library. Of the runs of such lengths, the one with the most P-sites.</p></div>\n"
         + more("Per pool: the read lengths, offsets, regions and frames of each library",

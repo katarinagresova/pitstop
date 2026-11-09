@@ -96,12 +96,51 @@ def test_calibrate_mixed():
     assert c["beside_nt"].tolist() == [x[0] + x[3] for x in cases]
     assert np.allclose(c["beside_share"], [x[2] / x[1] for x in cases])
     assert c["mixed"].tolist() == [x[4] for x in cases]
+    assert not c["pair"].any()
     assert c.loc[0, "calibrated"] and c.loc[0, "shift"] == 1
 
 
+def test_calibrate_pair():
+    # a pair length: the anchor is the start peak and the larger nt beside it, and the pair moves onto nt 0 and 1,
+    # whichever of the two is larger; the frame vetoes only when it is in neither frame of the pair
+    def prof(peak, at, beside, side):
+        r = np.ones(starts.PROFILE[1] - starts.PROFILE[0])
+        r[peak - starts.PROFILE[0]] = at
+        r[peak + side - starts.PROFILE[0]] = beside
+        return r
+    cases = [  # (start peak, P-sites at it, P-sites beside it, side, frames) -> (calibrated, shift)
+        (-1, 100, 88, 1, [530, 80, 390], True, 1),     # eIF 30 nt: the pair at nt -1 and 0
+        (0, 100, 88, -1, [530, 80, 390], True, 1),     # the same pair, the other nt larger: the same shift
+        (0, 100, 70, 1, [360, 550, 90], True, 0),      # K562 27 nt: frame 1 leads, but it is a frame of the pair
+        (1, 100, 80, -1, [240, 720, 40], True, 0),     # the same, the peak at +1
+        (2, 100, 60, -1, [300, 100, 600], True, -1),   # the pair at 1 and 2
+        (-2, 100, 60, 1, [300, 100, 600], True, 2),    # the pair at -2 and -1: the farthest it moves
+        (-3, 100, 60, 1, [500, 50, 450], False, 1),    # too far; the clear frame pair (2, 0) moves it
+        (3, 100, 60, -1, [900, 50, 50], False, 0),     # a codon-1 peak: too far, though its pair starts at +2
+        (-1, 100, 80, 1, [50, 900, 50], False, 0),     # frame 1 is in neither frame of the pair; no clear frame pair
+        (0, 10, 9, 1, [5, 1, 60], False, 0)]           # too few P-sites at the peak and inside the CDSs
+    p = np.array([prof(*x[:4]) for x in cases])
+    f = np.array([x[4] for x in cases])
+    lengths = (24, 24 + len(cases) - 1)
+    c = starts.calibrate(p, f, lengths, pair=np.ones(len(cases), dtype=bool))
+    assert c["pair"].all()
+    assert c["calibrated"].tolist() == [x[5] for x in cases]
+    assert c["shift"].tolist() == [x[6] for x in cases]
+    single = starts.calibrate(p, f, lengths)   # the peak alone: the coin flip of the first two, K562's veto
+    assert single["shift"].tolist()[:3] == [1, 0, -1] and not single.loc[2, "calibrated"]
+
+
+def test_pair_lengths():
+    # a pair length is mixed in half of the harringtonine libraries or more
+    rows = pd.DataFrame({"length": [27, 27, 27, 28, 28, 28, 29, 29, 29],
+                         "mixed": [True, True, False, True, False, False, False, False, False]})
+    assert starts.pair_lengths(rows).tolist() == [True, False, False]
+    assert starts.pair_lengths(rows[rows.index % 3 != 2]).tolist() == [True, True, False]   # 1 of 2
+
+
 def test_choose_start_lengths():
-    # two libraries per length (a harringtonine and an elongation one): the window, calibration and mixed offsets in
-    # the harringtonine library and a frame in both decide; of the passing runs, the one with the most P-sites
+    # two libraries per length (a harringtonine and an elongation one): the window, calibration in the harringtonine
+    # library and a frame in both decide; of the passing runs, the one with the most P-sites. Mixed offsets do not
     rows = []
     for length, cal, mix, per, reads in [(22, True, "", True, 900), (23, True, "harringtonine", True, 10),
                                          (24, False, "", True, 10), (25, True, "elongation", True, 25),
@@ -113,7 +152,7 @@ def test_choose_start_lengths():
     why, best = starts.choose_start_lengths(pd.DataFrame(rows), (23, 34))
     assert best == [28, 29, 30]          # 60 P-sites per library against 25-26's 50
     assert why[22] == why[35] == "outside the window 23-34"
-    assert why[23] == "mixed offsets in 1 of 1 harringtonine libraries"
+    assert why[23] == "outside the run 28-30"
     assert why[24] == "not calibrated in 1 of 1 harringtonine libraries"
     assert why[27] == "no clear frame in 2 of 2 libraries"
     assert why[25] == why[26] == "outside the run 28-30" and why[28] == "pass"   # elongation libraries: no say
@@ -255,19 +294,33 @@ def test_calibration_moves_a_shifted_length(extended):
     assert q["S6_pause"] > 0.05 and q["S7_quiet"] > 0.05
 
 
-def test_mixed_length_is_not_a_start_length(tmp_path):
+def test_mixed_length_anchors_its_pair(tmp_path):
     # the harringtonine libraries split their 30 nt 5' ends between offsets 13 and 12 (as eIF): the start peak has
-    # the nt beside it at about its height, so 30 nt is mixed there (the elongation libraries' is not) and the start
-    # lengths are 28-29. Its P-sites still move by minus the peak
+    # the nt beside it at about its height, so 30 nt is mixed there (the elongation libraries' is not: 0.2 of its 5'
+    # ends at 13) and a pair length in every library. The pair (nt -1 and 0, whichever is larger) moves onto nt 0 and
+    # 1 in all four libraries, and 30 nt is a start length; the calls are those of an unshifted set
     data = make_start_dataset(tmp_path, harr_offsets={30: [(13, .5), (12, .5)]})
     sheet = pool_sheet(tmp_path, data)
-    _, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(tmp_path / "s"), str(data["orfs"]))
+    out, st = starts.run(str(sheet), str(data["gtf"]), str(data["fasta"]), str(tmp_path / "s"), str(data["orfs"]))
     qc = pd.read_csv(tmp_path / "s.lengths.tsv", sep="\t")
-    mixed = (qc["kind"] == "harringtonine") & (qc["length"] == 30)
+    thirty = qc["length"] == 30
+    mixed = (qc["kind"] == "harringtonine") & thirty
     assert qc.loc[mixed, "mixed"].all() and not qc.loc[~mixed, "mixed"].any()
-    assert (qc.loc[mixed, "offset"] == orfs_offsets(qc[mixed]) - qc.loc[mixed, "start_peak"]).all()
-    assert (qc.loc[qc["length"] == 30, "qc"] == "mixed offsets in 2 of 2 harringtonine libraries").all()
-    assert st["start_lengths"] == "28,29"
+    assert qc.loc[thirty, "pair"].all() and not qc.loc[~thirty, "pair"].any()
+    assert qc.loc[mixed, "start_peak"].isin([-1, 0]).all() and qc.loc[mixed, "beside_nt"].isin([-1, 0]).all()
+    assert qc["calibrated"].all() and (qc.loc[thirty, "shift"] == 1).all() and (qc.loc[~thirty, "shift"] == 0).all()
+    assert (qc["offset"] == orfs_offsets(qc) + thirty).all()
+    assert (qc["qc"] == "pass").all() and st["start_lengths"] == "28,29,30"
+    out = out.set_index("ORF_id")
+    q = out["q"]
+    assert (out.loc[out.index.str.endswith(":CDS"), "q"] < 0.05).all()
+    assert sum(q[i] < 0.05 for i in PLANTED) >= 6
+    assert q["S6_pause"] > 0.05 and q["S7_quiet"] > 0.05
+    # the report: the pair's move is not an offset of the initiation library
+    doc = (tmp_path / "s.starts.html").read_text(encoding="utf-8")
+    assert "Mixed lengths: 30 nt. All are pair lengths." in doc and "30 nt moved +1 (pair)" in doc
+    assert "The calibration moves the pair lengths 30 nt by +1 in the initiation library" in doc
+    assert "Some initiation libraries need other offsets." not in doc
 
 
 def test_synthetic_calls(started):
