@@ -93,6 +93,8 @@ def test_calibrate_mixed():
                          (24, 24 + len(cases) - 1))
     assert c["start_peak"].tolist() == [x[0] for x in cases]
     assert c["beside_peak"].tolist() == [x[2] for x in cases]
+    assert c["beside_nt"].tolist() == [x[0] + x[3] for x in cases]
+    assert np.allclose(c["beside_share"], [x[2] / x[1] for x in cases])
     assert c["mixed"].tolist() == [x[4] for x in cases]
     assert c.loc[0, "calibrated"] and c.loc[0, "shift"] == 1
 
@@ -211,6 +213,7 @@ def test_start_lengths_from_kernel(started):
     assert (qc["qc"] == "pass").all() and (qc["pool"] == "A").all()
     assert (qc["psites"] == qc[["5UTR", "CDS", "3UTR", "transcript"]].sum(axis=1)).all()
     assert np.allclose(qc.groupby("library")["share"].sum(), 1)
+    assert np.allclose(qc.groupby("library")["interior_share"].sum(), 1)
     prof = pd.read_csv(started["dir"] / "s.profiles.tsv", sep="\t")
     n = (starts.PROFILE[1] - starts.PROFILE[0]) + (starts.STOP_PROFILE[1] - starts.STOP_PROFILE[0]) + starts.CDS_BINS * 3
     assert len(prof) == 4 * 3 * n
@@ -290,12 +293,53 @@ def test_starts_cli_deterministic(started, tmp_path):
     data = started["data"]
     cli.main(["starts", "--libraries", str(started["sheet"]), "--gtf", str(data["gtf"]), "--fasta", str(data["fasta"]),
               "--orfs", str(data["orfs"]), "--out-prefix", str(tmp_path / "again")])
-    for f in ("starts", "lengths", "profiles", "kernel", "factors", "starts_stats"):
+    for f in ("starts", "lengths", "profiles", "libraries", "pairs", "start_codons", "kernel", "factors"):
         assert filecmp.cmp(d / f"s.{f}.tsv", tmp_path / f"again.{f}.tsv", shallow=False), f
+    stats = [pd.read_csv(x, sep="\t", dtype=str).set_index("stat")["value"] for x in (d / "s.starts_stats.tsv",
+                                                                                     tmp_path / "again.starts_stats.tsv")]
+    assert stats[0].equals(stats[1])
     cli.main(["starts", "--libraries", str(started["sheet"]), "--gtf", str(data["gtf"]), "--fasta", str(data["fasta"]),
               "--scan", "--out-prefix", str(tmp_path / "scan")])
-    for f in ("starts", "start_orfs", "starts_stats"):
+    for f in ("starts", "start_orfs", "start_codons", "starts_stats"):
         assert filecmp.cmp(d / f"scan.{f}.tsv", tmp_path / f"scan.{f}.tsv", shallow=False), f
+
+
+def test_pairs_and_libraries(started):
+    # a pair per row of the sheet, its distance from the two libraries' interior shares; harringtonine raises the start
+    # peak (synthetic: the start profiles of harringtonine have 5x the elongation's peak)
+    d = started["dir"]
+    pairs = pd.read_csv(d / "s.pairs.tsv", sep="\t")
+    sheet = pd.read_csv(started["sheet"], sep="\t")
+    assert list(pairs.columns) == starts.PAIR_COLUMNS and (pairs[["pool", "harringtonine", "elongation"]]
+                                                           == sheet).all().all()
+    share = pd.read_csv(d / "s.lengths.tsv", sep="\t").pivot(index="length", columns="library", values="interior_share")
+    for _, r in pairs.iterrows():
+        assert r["distance"] == pytest.approx(0.5 * (share[r["harringtonine"]] - share[r["elongation"]]).abs().sum())
+    assert (pairs["distance"] < starts.PAIR_DISTANCE).all()          # one digestion
+    libs = pd.read_csv(d / "s.libraries.tsv", sep="\t").set_index("library")
+    assert list(libs.columns) == starts.LIBRARY_COLUMNS[1:]
+    assert np.allclose(libs[["5UTR", "CDS", "3UTR", "transcript"]].sum(axis=1), 1)
+    assert np.allclose(libs[["frame0", "frame1", "frame2"]].sum(axis=1), 1)
+    for _, r in pairs.iterrows():
+        assert libs.at[r["harringtonine"], "start_enrichment"] > 3 * libs.at[r["elongation"], "start_enrichment"]
+
+
+def test_start_codons(started):
+    # per class: the tests are the class's tests in starts_stats.tsv, the calls the scan's calls; shares sum to 1
+    for name, st in (("s", started["stats"]), ("scan", started["scan_stats"])):
+        c = pd.read_csv(started["dir"] / f"{name}.start_codons.tsv", sep="\t", keep_default_na=False)
+        assert list(c.columns) == starts.CODON_COLUMNS
+        g = c.groupby("class")
+        for cls, tests in g["tests"].sum().items():
+            assert tests == st[f"tests {cls}"], (name, cls)
+        for what in ("test_share", "call_share"):
+            sums = g[what].sum()
+            assert np.allclose(sums[sums > 0], 1)
+    c = pd.read_csv(started["dir"] / "scan.start_codons.tsv", sep="\t", keep_default_na=False)
+    assert c["called"].sum() == started["scan_stats"]["called"]
+    assert set(c["codon"]) <= set(starts.START_CODONS)
+    ann = c[c["class"] == "annotated"].set_index("codon")
+    assert ann.at["ATG", "test_share"] == 1             # synthetic annotated starts are ATG
 
 
 def test_length_window(started, tmp_path):

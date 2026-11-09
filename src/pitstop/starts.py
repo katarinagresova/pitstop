@@ -24,7 +24,13 @@ keeps out short RNA fragments), calibrated and not mixed in every harringtonine 
 library (MIN_FRAME CDS-interior P-sites or more, MIN_TOP of them in the top frame); of the runs of consecutive such
 lengths, the one with the most P-sites. Only their P-sites count, one per alignment. <prefix>.lengths.tsv has the
 QC and each length's offset (the orfs run's, plus the shift), <prefix>.profiles.tsv the profiles behind it
-(P-sites from the pool's offsets, before the calibration).
+(P-sites from the pool's offsets, before the calibration), <prefix>.libraries.tsv the start-length P-sites of each
+library after the calibration (by region, by frame inside the CDSs, and the start peak: P-sites at the annotated start
+codons per start, over the P-sites per in-frame codon inside the CDSs),
+<prefix>.pairs.tsv the read-length distance of each pair (a row of the sheet): half the summed absolute difference
+of the two libraries' shares of CDS-interior P-sites per read length (0: the same lengths, 1: none in common; another
+digestion at PAIR_DISTANCE or more), <prefix>.start_codons.tsv the start codons of the tests and of the calls per
+class.
 
 Background, per pool. The harringtonine / elongation ratio depends on the region, and in the CDS on
 the distance from the start (run-off). h = s_t f_b e: a factor per bin of region and distance (BINS),
@@ -57,13 +63,14 @@ The shoulder of a candidate (a flag, not part of the test): log2 harringtonine /
 peaks at codons that cannot start (null codons) have no shoulder.
 """
 import logging
+import os
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from scipy.special import betainc, gammainc
 
-from . import annotation
+from . import __version__, annotation
 
 log = logging.getLogger(__name__)
 
@@ -89,8 +96,15 @@ MIN_TOP = 0.4        # start lengths: the top frame has this share of a length's
 STOP_PROFILE = (-45, 15)   # QC profiles: nt from the first nt of the stop codon (codons -15..4)
 CDS_BINS = 20        # QC profiles: bins along the CDS
 LENGTH_COLUMNS = ["library", "pool", "kind", "length", "psites", "share", "5UTR", "CDS", "3UTR", "transcript",
-                  "frame0", "frame1", "frame2", "top_frame", "periodic", "start_peak", "at_peak", "beside_peak", "mixed",
-                  "calibrated", "shift", "offset", "qc", "start_length"]
+                  "frame0", "frame1", "frame2", "interior_share", "top_frame", "periodic", "start_peak", "at_peak",
+                  "beside_peak", "beside_nt", "beside_share", "mixed", "calibrated", "shift", "offset", "qc",
+                  "start_length"]
+LIBRARY_COLUMNS = ["library", "pool", "kind", "psites", "start_psites", "start_share", "5UTR", "CDS", "3UTR",
+                   "transcript", "interior", "frame0", "frame1", "frame2", "at_start", "start_enrichment"]
+PAIR_COLUMNS = ["pool", "harringtonine", "elongation", "distance"]
+PAIR_DISTANCE = 0.3  # pairs: a read-length distance this large or larger means another digestion (pairs of
+                     # another digestion were at 0.59-0.74)
+CODON_COLUMNS = ["class", "codon", "tests", "test_share", "called", "call_share"]
 STRIDE = WIN[1] - WIN[0]   # one null codon per window width for the null windows: they do not overlap
 FDR = 0.05           # the BH cut of a call
 MAX_MULTI = 0.5      # null windows: multimapped share of the window's reads below this
@@ -339,13 +353,14 @@ def calibrate(prof, frames, lengths):
     not clearly against it (the dominant frame, with MIN_FRAME interior P-sites or more, has FRAME_GUARD times the
     P-sites of the frame that the shift moves onto frame 0). Shift: minus the peak; for a length that is not
     calibrated, the shift that moves a clear dominant frame onto frame 0 (frame 1: -1, frame 2: +1), else 0.
-    Mixed: MIN_ANCHOR P-sites or more at the peak, and the larger of the two nt beside it (beside_peak) has MIXED of
-    them or more."""
+    Mixed: MIN_ANCHOR P-sites or more at the peak, and the larger of the two nt beside it (beside_peak, at nt beside_nt;
+    the nt before the peak if tied) has MIXED of them or more (beside_share: beside_peak / at_peak)."""
     n = np.arange(len(prof))
     peak = np.argmax(prof[:, :KERNEL_END - PROFILE[0]], axis=1) + PROFILE[0]
     at_peak = prof[n, peak - PROFILE[0]]
     padded = np.pad(prof, ((0, 0), (1, 1)))   # a peak at nt -15 has no nt before it in the profile
-    beside = np.maximum(padded[n, peak - PROFILE[0]], padded[n, peak - PROFILE[0] + 2])
+    before, after = padded[n, peak - PROFILE[0]], padded[n, peak - PROFILE[0] + 2]
+    beside = np.maximum(before, after)
     mixed = (at_peak >= MIN_ANCHOR) & (beside >= MIXED * at_peak)
     total = frames.sum(axis=1)
     dominant = frames.argmax(axis=1)
@@ -355,7 +370,8 @@ def calibrate(prof, frames, lengths):
     clear = (total >= MIN_FRAME) & (top2[:, 1] >= FRAME_GUARD * top2[:, 0])
     shift = np.where(calibrated, -peak, np.where(clear, np.array([0, -1, 1])[dominant], 0))
     return pd.DataFrame({"length": np.arange(lengths[0], lengths[1] + 1), "start_peak": peak, "at_peak": at_peak,
-                         "beside_peak": beside, "mixed": mixed,
+                         "beside_peak": beside, "beside_nt": np.where(before >= after, peak - 1, peak + 1),
+                         "beside_share": beside / np.maximum(at_peak, 1), "mixed": mixed,
                          "frame0": frames[:, 0], "frame1": frames[:, 1], "frame2": frames[:, 2],
                          "calibrated": calibrated, "shift": shift})
 
@@ -623,6 +639,31 @@ def near_starts(pos, p, passing, annotated=()):
     return called, stopped_by
 
 
+def codon_table(layout, tested, pos, cls, called):
+    """Per class (CLASSES) and start codon: the tests (tested: flat positions per class) and the calls (pos[called],
+    their classes cls[called]), each also as a share of the class's. Codons in the order of START_CODONS, then the
+    others."""
+    def counts(x):
+        s = layout.seq
+        key = s[x].astype(np.int64) * 65536 + s[x + 1].astype(np.int64) * 256 + s[x + 2]
+        u, n = np.unique(key, return_counts=True)
+        return {bytes([k >> 16, (k >> 8) & 255, k & 255]).decode(): int(c) for k, c in zip(u.tolist(), n.tolist())}
+    rows = []
+    for c, name in enumerate(CLASSES):
+        nt, nc = counts(tested[c]), counts(pos[called & (cls == c)])
+        st, sc = sum(nt.values()), sum(nc.values())
+        order = [x for x in START_CODONS if x in nt or x in nc]
+        order += sorted((set(nt) | set(nc)) - set(order))
+        rows += [[name, x, nt.get(x, 0), nt.get(x, 0) / max(st, 1), nc.get(x, 0), nc.get(x, 0) / max(sc, 1)]
+                 for x in order]
+    return pd.DataFrame(rows, columns=CODON_COLUMNS)
+
+
+def write_stats(st, out_prefix):
+    pd.DataFrame(list(st.items()), columns=["stat", "value"]).to_csv(f"{out_prefix}.starts_stats.tsv", sep="\t",
+                                                                     index=False)
+
+
 def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_lengths=None, start_codons=None,
         fdr=FDR, window=WINDOW):
     """Start evidence from the `pitstop orfs` runs of a library sheet (TSV pool, harringtonine, elongation:
@@ -634,7 +675,11 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     if start_codons is not None and not scan:
         raise ValueError("start codons choose the scan's candidates: give them with a scan")
     start_codons = START_CODONS if start_codons is None else tuple(start_codons)
-    st = {}
+    # the inputs, for the report: file names only, no paths
+    st = {"pitstop": __version__, "libraries_sheet": os.path.basename(sheet_path), "gtf": os.path.basename(gtf),
+          "fasta": os.path.basename(fasta), "candidates_from": "scan" if scan else os.path.basename(orfs_path),
+          "fdr": fdr, "length_window": f"{window[0]}-{window[1]}",
+          "start_lengths_given": "" if start_lengths is None else f"{start_lengths[0]}-{start_lengths[1]}"}
     sheet = pd.read_csv(sheet_path, sep="\t", dtype=str)
     prefixes = list(sheet["harringtonine"]) + list(sheet["elongation"])
     names = None
@@ -677,23 +722,47 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         profiles.append(qc_profiles(start, profile(pos, length, tx, ce_flat, (lo, hi), STOP_PROFILE),
                                     cds_bins(pos, length, tx, layout, (lo, hi)), lo).assign(library=p))
     table = pd.concat(qc, ignore_index=True)
+    n = table[["frame0", "frame1", "frame2"]].sum(axis=1)
+    table["interior_share"] = n / n.groupby(table["library"]).transform("sum").clip(lower=1)
     verdict, chosen = choose_start_lengths(table, window)
     start_lengths = chosen if start_lengths is None else list(range(start_lengths[0], start_lengths[1] + 1))
     table["qc"] = table["length"].map(verdict)
     table["start_length"] = table["length"].isin(start_lengths)
     table[LENGTH_COLUMNS].to_csv(f"{out_prefix}.lengths.tsv", sep="\t", index=False)
+    interior = table.pivot(index="length", columns="library", values="interior_share").fillna(0)
+    pairs = sheet[["pool", "harringtonine", "elongation"]].copy()
+    pairs["distance"] = [0.5 * float((interior[h] - interior[e]).abs().sum())
+                         for h, e in zip(pairs["harringtonine"], pairs["elongation"])]
+    pairs[PAIR_COLUMNS].to_csv(f"{out_prefix}.pairs.tsv", sep="\t", index=False)
     pd.concat(profiles, ignore_index=True)[["library", "length", "anchor", "x", "frame", "psites"]].to_csv(
         f"{out_prefix}.profiles.tsv", sep="\t", index=False)
     del profiles
     if not start_lengths:
+        st["start_lengths"] = ""
+        write_stats(st, out_prefix)
         raise ValueError(f"no read length passes the QC (in the window {window[0]}-{window[1]}, calibrated and not "
                          f"mixed in every harringtonine library, a clear frame in every library): see "
                          f"{out_prefix}.lengths.tsv, or choose them with --start-lengths")
-    st["length_window"] = f"{window[0]}-{window[1]}"
     st["start_lengths"] = ",".join(map(str, start_lengths))
     log.info("start lengths: %s", start_lengths)
     shift = {p: g["shift"].to_numpy() for p, g in table.groupby("library", sort=False)}
     psites = {p: shift_psites(x, shift[p], lo, tx) for p, x in psites.items()}
+    # per library: its start-length P-sites after the calibration, by region and by frame inside the CDSs; the start
+    # peak, per start, over the P-sites per in-frame codon inside the CDSs (the codons that interior_frames counts in
+    # frame 0). Not the stop peak: on real data it did not fade with harringtonine (7.5-20x against 8-18x)
+    codons = int(((np.maximum(layout.cds_end[has] - layout.cds_start[has] - 2 * INTERIOR, 0) + 2) // 3).sum())
+    rows = []
+    for p, (pos, length, _) in psites.items():
+        k = np.isin(length, start_lengths)
+        reg = np.bincount(region[pos[k]], minlength=4)
+        fr = interior_frames(pos[k], length[k], tx, layout, (lo, hi)).sum(axis=0)
+        total = int(table.loc[table["library"] == p, "psites"].sum())
+        at_start = int(np.isin(pos[k], cs_pos).sum())
+        per_codon = fr[0] / max(codons, 1)
+        rows.append([p, pool_of[p], role[p], total, int(k.sum()), k.sum() / max(total, 1)]
+                    + list(reg / max(reg.sum(), 1)) + [int(fr.sum())] + list(fr / max(fr.sum(), 1))
+                    + [at_start, at_start / len(cs_pos) / per_codon if per_codon > 0 and len(cs_pos) else np.nan])
+    pd.DataFrame(rows, columns=LIBRARY_COLUMNS).to_csv(f"{out_prefix}.libraries.tsv", sep="\t", index=False)
     prof = {p: profile(pos, length, tx, cs_flat, (lo, hi)) for p, (pos, length, _) in psites.items()}
 
     kern_rows = []
@@ -754,8 +823,10 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         every = np.flatnonzero(codon_mask(layout, start_codons) & (tx >= 0))
         every = every[~np.isin(every, cs_pos)]
         n_tests = np.r_[np.bincount(region[every], minlength=4), len(cs_pos)]
+        tested = [every[region[every] == c] for c in range(4)] + [cs_pos]
     else:
         n_tests = np.bincount(cls, minlength=5)
+        tested = [pos[cls == c] for c in range(5)]
 
     def class_q(p):
         q = np.full(len(p), np.nan)
@@ -831,11 +902,12 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
                   stopped=int((stopped_by >= 0).sum()))
         st.update({f"start_orfs {k}": int(v) for k, v in orfs_out["type"].value_counts().sort_index().items()})
         orfs_out.to_csv(f"{out_prefix}.start_orfs.tsv", sep="\t", index=False, na_rep="NA")
+    codon_table(layout, tested, pos, cls, out["called"].to_numpy() if scan else out["q"].to_numpy() < fdr).to_csv(
+        f"{out_prefix}.start_codons.tsv", sep="\t", index=False)
     out = out[cols]
     log.info("%s", st)
     out.to_csv(f"{out_prefix}.starts.tsv", sep="\t", index=False, na_rep="NA")
     pd.concat(kern_rows, ignore_index=True).to_csv(f"{out_prefix}.kernel.tsv", sep="\t", index=False)
     pd.concat(factors, ignore_index=True).to_csv(f"{out_prefix}.factors.tsv", sep="\t", index=False)
-    pd.DataFrame(list(st.items()), columns=["stat", "value"]).to_csv(f"{out_prefix}.starts_stats.tsv", sep="\t",
-                                                                     index=False)
+    write_stats(st, out_prefix)
     return out, st
