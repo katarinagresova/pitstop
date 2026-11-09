@@ -279,8 +279,10 @@ length passes the QC, before it stops, so the report says why.
 The sections before **Pair detail** are for the whole run; the less
 important parts of a section are folded until you open them.
 
-- **Verdict and next steps**: the checks of the run, and what to do about
-  each.
+- **Verdict and next steps**: the checks of the run. Beside them, **Used in
+  this run** lists what `starts` did (the start lengths, the mixed lengths,
+  the offsets that the calibration moved: nothing to pass on), and **Next
+  steps** lists what to do about the checks.
 - **Calls**: per class the tests, the calls and the false calls that the null
   windows expect; with `--scan`, the ORFs of the called starts by type; the
   start codons of the calls against those of the tests (real starts are rich

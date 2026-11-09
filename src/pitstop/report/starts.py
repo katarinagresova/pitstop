@@ -581,9 +581,9 @@ def start_checks(d, chosen, mixed, moved, pairs):
 
 
 def start_steps(d, name, mixed, moved, pairs):
-    """(title, text) in order."""
+    """(used, steps), each a list of (title, text) in order: what this run did, and what to do about it."""
     stats, t = d["stats"], d["t"]
-    out = []
+    out, used = [], []
     lo, hi = length_window(stats)
     chosen = int_list(stats["start_lengths"])
     passing = sorted(int(x) for x in t.loc[t["qc"] == "pass", "length"].unique())
@@ -606,25 +606,26 @@ def start_steps(d, name, mixed, moved, pairs):
                     "library. Start lengths says why each length fails. Choose the start lengths by hand with "
                     "--start-lengths LO-HI, or leave out the pair that fails, and run starts again."))
     elif stats["start_lengths_given"]:
-        out.append((f"Start lengths given: {span(chosen)} nt.",
-                    f"The QC passes {span(passing)} nt. Check the given lengths in each pair: the P-sites of a start "
-                    "length peak at nt 0 of the annotated starts, in frame 0."))
+        used.append((f"Start lengths given: {span(chosen)} nt.",
+                     f"The QC passes {span(passing)} nt. Check the given lengths in each pair: the P-sites of a start "
+                     "length peak at nt 0 of the annotated starts, in frame 0."))
     else:
-        out.append((f"Start lengths: {span(chosen)} nt.",
-                    f"Of the lengths in the window {lo}–{hi} nt, these are calibrated and not mixed in every "
-                    "harringtonine library, and have a clear frame in every library (the run of such lengths with the "
-                    "most P-sites). Only their P-sites count."))
+        used.append((f"This run used the start lengths {span(chosen)} nt.",
+                     f"Of the lengths in the window {lo}–{hi} nt, these are calibrated and not mixed in every "
+                     "harringtonine library, and have a clear frame in every library (the run of such lengths with the "
+                     "most P-sites). Only their P-sites count. You do not need to pass them on; --start-lengths LO-HI "
+                     "chooses them by hand."))
     if mixed:
-        out.append((f"Mixed lengths: {span(mixed)} nt. They are not start lengths.",
-                    "In some harringtonine libraries the nucleotide beside the start peak holds half of the peak's "
-                    "P-sites or more: two groups of 5′ ends, and one offset puts the smaller group 1 nt off. The "
-                    "inspect report of the library shows them too."))
+        used.append((f"Mixed lengths: {span(mixed)} nt. They are not start lengths.",
+                     "In some harringtonine libraries the nucleotide beside the start peak holds half of the peak's "
+                     "P-sites or more: two groups of 5′ ends, and one offset puts the smaller group 1 nt off. The "
+                     "inspect report of the library shows them too."))
     if moved:
-        out.append(("Some initiation libraries need other offsets.",
-                    "The calibration moves the P-sites of " + ", ".join(f"{x} nt by {nt(v)}" for x, v in moved)
-                    + " in some harringtonine libraries: their 5′ ends are longer or shorter than the elongation "
-                    "libraries' offsets expect. starts corrects this per library and length; the tab of each pair "
-                    "shows which."))
+        used.append(("Some initiation libraries need other offsets.",
+                     "The calibration moves the P-sites of " + ", ".join(f"{x} nt by {nt(v)}" for x, v in moved)
+                     + " in some harringtonine libraries: their 5′ ends are longer or shorter than the elongation "
+                     "libraries' offsets expect. starts corrects this per library and length; the tab of each pair "
+                     "shows which."))
     if chosen and stats["candidates_from"] == "scan":
         out.append(("Count the ORFs of the catalogue in the elongation libraries.",
                     f"{name}.catalogue.tsv has the uORFs and uoORFs of the called starts, and every annotated CDS. "
@@ -634,7 +635,7 @@ def start_steps(d, name, mixed, moved, pairs):
         out.append((f"The calls are in {name}.starts.tsv.",
                     f"A start with q < {stats['fdr']} has more initiation P-sites in its window than the elongation "
                     "libraries expect."))
-    return out
+    return used, out
 
 
 # ---------- sections ----------
@@ -839,15 +840,17 @@ def starts_report(prefix):
             + (f"{span(chosen)} nt" + (" (given)" if stats["start_lengths_given"] else "") if chosen else "none")
             + f" (window {lo}–{hi} nt)</dd></dl></header>\n")
 
-    steps = "".join(f'<li><div class="t">{esc(title)}</div><p>{esc(text)}</p></li>'
-                    for title, text in start_steps(d, name, mixed, moved, pairs))
+    used, todo = start_steps(d, name, mixed, moved, pairs)
+    items = lambda xs: "".join(f'<li><div class="t">{esc(title)}</div><p>{esc(text)}</p></li>' for title, text in xs)
+    steps = (f'<h3>Used in this run</h3><ul class="steps">{items(used)}</ul>' if used else "") \
+        + f'<h3>Next steps</h3><ol class="steps">{items(todo)}</ol>'
     check_html = ('<table class="flags"><thead><tr><th>Check</th><th>State</th><th>Value</th><th>Basis</th><th></th>'
                   "</tr></thead><tbody>" + "".join(
                       f"<tr><td>{esc(label)}</td><td>{state_cell(state)}</td><td>{esc(value)}</td>"
                       f'<td>{esc(basis)}</td><td><a href="#{sec}">details</a></td></tr>'
                       for label, state, value, basis, sec in checks) + "</tbody></table>")
     verdict = section("verdict", "Verdict and next steps", (
-        f'<div class="vgrid"><div class="panel nextbox"><h3>Next steps</h3><ol class="steps">{steps}</ol></div>'
+        f'<div class="vgrid"><div class="panel nextbox">{steps}</div>'
         f'<div class="panel scroll">{check_html}<p class="note">The pairs have a cut of their own; the QC of the read '
         "lengths decides the start lengths, and the null windows estimate the false calls. A warning does not change "
         "the exit code.</p></div></div>\n"), fold=False)
