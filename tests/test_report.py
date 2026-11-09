@@ -185,7 +185,7 @@ def test_complexity_at_depth(runs, tmp_path, monkeypatch):
 
 # ---------- the report of starts ----------
 
-START_TABLES = ("starts_stats", "lengths", "libraries", "pairs", "start_codons")
+START_TABLES = ("starts_stats", "lengths", "libraries", "pairs", "start_codons", "false_calls")
 
 
 @pytest.fixture(scope="module")
@@ -271,7 +271,8 @@ def bad_pairs(started, tmp_path_factory):
     drawn from them."""
     src = started["dir"] / "scan"
     prefix = tmp_path_factory.mktemp("bad_pairs") / "scan"
-    for name in ("starts_stats", "lengths", "profiles", "libraries", "pairs", "kernel", "start_codons"):
+    for name in ("starts_stats", "lengths", "profiles", "libraries", "pairs", "kernel", "start_codons",
+                 "false_calls"):
         df = pd.read_csv(f"{src}.{name}.tsv", sep="\t", dtype=str, keep_default_na=False)
         if name == "pairs":
             df.loc[1, "distance"] = "0.6123"

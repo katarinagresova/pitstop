@@ -32,8 +32,8 @@ VISIBLE = 0.004      # the profile bars draw from this share of the row's highes
 # ---------- the tables ----------
 
 def load_starts(prefix):
-    """The tables of a starts run: the stats (a dict of strings), lengths, profiles, pairs, and libraries, kernel and
-    start codons (None when no read length passed the QC: the run stopped before them)."""
+    """The tables of a starts run: the stats (a dict of strings), lengths, profiles, pairs, and libraries, kernel,
+    start codons and false calls (None when no read length passed the QC: the run stopped before them)."""
     stats = (pd.read_csv(f"{prefix}.starts_stats.tsv", sep="\t", dtype=str, keep_default_na=False)
              .set_index("stat")["value"].to_dict())
     t = pd.read_csv(f"{prefix}.lengths.tsv", sep="\t", dtype={"library": str, "pool": str, "qc": str})
@@ -42,7 +42,8 @@ def load_starts(prefix):
     done = bool(stats.get("start_lengths"))
     read = lambda name, **kw: pd.read_csv(f"{prefix}.{name}.tsv", sep="\t", **kw) if done else None
     return dict(stats=stats, t=t, prof=prof, pairs=pairs, lt=read("libraries", dtype={"library": str, "pool": str}),
-                kern=read("kernel", dtype={"pool": str}), codons=read("start_codons", keep_default_na=False))
+                kern=read("kernel", dtype={"pool": str}), codons=read("start_codons", keep_default_na=False),
+                false=read("false_calls"))
 
 
 def library_order(t):
@@ -733,6 +734,27 @@ def pair_panel(d, r, L, chosen, charts, i):
             + "</div>\n")
 
 
+def false_panel(fc, name):
+    """The false share per class (rows) and bin of expected reads (columns), from false_calls.tsv."""
+    bins = fc.drop_duplicates("expected_from")[["expected_from", "expected_to"]].itertuples(index=False)
+    heads = [f"{a:g}–{b:g}" if not isna(b) else f"{a:g} or more" for a, b in bins]
+    cell = lambda r: (("–" if isna(r.false_share) else
+                       f"{pct(r.false_share, 0)} ({pct(r.false_share_low, 0)[:-1]}–{pct(r.false_share_high, 0)})")
+                      + (f" of {count(r.calls)}" if r.calls else ""))
+    rows = [[label] + [cell(r) for r in fc[fc["class"] == c].itertuples()]
+            for c, label in CALL_CLASSES if (fc["class"] == c).any()]
+    return (f'<div class="panel scroll">{html_table(pd.DataFrame(rows, columns=["Class"] + heads), heads)}'
+            '<p class="note">Columns: the expected reads in the window (the harringtonine reads that the elongation '
+            "profile predicts there, <code>expected</code> of starts.tsv). Per class and bin: the share of the calls "
+            f"that are false, its {100 * sx.INTERVAL:.0f}% interval, and the calls. The share: the null windows "
+            "(windows with no start codon nearby) of the same region and bin at the p of the last call of the class, "
+            "as a share of them, times the tests of the bin, over its calls. Few null windows give a wide interval; "
+            "–: no calls, or no null windows in the bin. To keep fewer false calls, leave out the calls of the bins "
+            "with a high share.</p>"
+            + tsv_view(fc.assign(p_cut=fc["p_cut"].map(lambda v: f"{v:.2g}")), f"{name}.false_calls.tsv")
+            + "</div>\n")
+
+
 def calls_section(d, name):
     stats, cod = d["stats"], d["codons"]
     fdr = stats["fdr"]
@@ -740,8 +762,10 @@ def calls_section(d, name):
     num = lambda k: float(stats[k]) if stats.get(k, "") != "" else np.nan
     scan = stats["candidates_from"] == "scan"
     rows = [(label, count(num(f"tests {c}")), count(num(f"candidates {c}")), count(num(f"{key} {c}")),
-             count(num(f"expected_false {c}"))) for c, label in CALL_CLASSES if f"tests {c}" in stats]
-    table = pd.DataFrame(rows, columns=["Class", "Tests", "Candidates", f"q < {fdr}", "Expected false"])
+             count(num(f"calls {c}")), count(num(f"expected_false {c}")), pct(num(f"false_share {c}"), 0))
+            for c, label in CALL_CLASSES if f"tests {c}" in stats]
+    num_cols = ["Tests", "Candidates", f"q < {fdr}", "Calls", "Expected false", "False share"]
+    table = pd.DataFrame(rows, columns=["Class"] + num_cols)
     tl = [("Candidates", count(num("candidates")) if scan else count(num("orf_table_rows")),
            "start codons with initiation reads" if scan else "rows of the ORF table"),
           ("Annotated starts", count(num(f"{key} annotated")), f"of {count(num('tests annotated'))}, q < {fdr}"),
@@ -751,13 +775,14 @@ def calls_section(d, name):
     stopped = (f" {count(num('stopped'))} candidates with q < {fdr} were not called: a called or annotated start stops "
                f"the candidates within {sx.NEAR[1]} nt and in its codons 1–10, where harringtonine raises the reads."
                if scan else "")
+    calls_note = f"q < {fdr} and not stopped by a call nearby" if scan else f"q < {fdr}"
     body = (tiles(tl)
-            + f'<div class="panel scroll">{html_table(table, ["Tests", "Candidates", f"q < {fdr}", "Expected false"])}'
+            + f'<div class="panel scroll">{html_table(table, num_cols)}'
             '<p class="note">A class is one BH family: the annotated starts, and the other candidates by region. Tests: '
             "the start codons of the class (a scan tests those with harringtonine reads; the others count with p = 1). "
-            "Expected false: the share of the null windows (windows with no start codon nearby) at the p of the last "
-            "call, times the tests; where they are a large part of the calls of a class, use those calls with care."
-            f"{stopped}</p></div>\n")
+            f"Calls: {esc(calls_note)}. Expected false: the sum over the bins of expected reads below. False share: of "
+            f"the calls.{stopped}</p></div>\n"
+            + false_panel(d["false"], name))
     if scan:
         orfs = pd.DataFrame([(ty, count(num(f"start_orfs {ty}")), count(num(f"catalogue {ty}")))
                              for ty in ORF_TYPES if f"start_orfs {ty}" in stats or f"catalogue {ty}" in stats],
@@ -826,7 +851,8 @@ def starts_report(prefix):
 
     files = [f"{name}.{x}" for x in ("starts_stats.tsv", "pairs.tsv", "lengths.tsv", "profiles.tsv")]
     if chosen:
-        files += [f"{name}.{x}" for x in ("libraries.tsv", "kernel.tsv", "start_codons.tsv", "starts.tsv")]
+        files += [f"{name}.{x}" for x in ("libraries.tsv", "kernel.tsv", "start_codons.tsv", "false_calls.tsv",
+                                          "starts.tsv")]
         if stats["candidates_from"] == "scan":
             files += [f"{name}.{x}" for x in ("start_orfs.tsv", "catalogue.tsv")]
     checks = start_checks(d, chosen, mixed, paired, moved, pairs)

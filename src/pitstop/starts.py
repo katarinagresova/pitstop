@@ -51,7 +51,10 @@ Pools add their means and variances. An extra overdispersion phi per region and 
 expected reads makes at most 1% of the null windows reach p <= 0.01. q is BH per class: the annotated
 starts, and the other candidates per region. A scan calibrates phi twice: after a first call, the null
 windows in the codons 1-10 of the called starts (RAISED: run-off, as after an annotated start) are dropped,
-and the starts are called again.
+and the starts are called again. <prefix>.false_calls.tsv: per class and bin of expected reads, the false calls that
+the null windows of the bin expect at the p cut of the class, and their share of the calls. In a bin, that share
+of the null windows does not fall with a stricter cut (real data): a q from the null windows per class and bin would
+accept or reject most of a bin, so q stays BH and the false share is given per bin.
 
 Candidates: the starts of an ORF table and the annotated starts, or a scan: each start codon (of the chosen
 start codons, default START_CODONS) with harringtonine reads in its window (BH counts every such start codon of
@@ -73,7 +76,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
-from scipy.special import betainc, gammainc
+from scipy.special import betainc, betaincinv, gammainc
 
 from . import __version__, annotation
 from .annotation import CDS, INTERIOR, NO_CDS, REGIONS, UTR3, UTR5
@@ -111,8 +114,11 @@ PAIR_COLUMNS = ["pool", "harringtonine", "elongation", "distance"]
 PAIR_DISTANCE = 0.4  # pairs: a read-length distance this large or larger means another digestion (pairs of one
                      # digestion were at 0.01-0.33, pairs of another digestion at 0.56-0.78)
 CODON_COLUMNS = ["class", "codon", "tests", "test_share", "called", "call_share"]
-STARTS_COLUMNS = ["Name", "start", "codon", "region", "frame", "ORF_id", "harringtonine", "elongation", "expected",
-                  "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
+FALSE_COLUMNS = ["class", "expected_from", "expected_to", "tests", "calls", "p_cut", "null_windows", "null_at_cut",
+                 "expected_false", "false_share", "false_share_low", "false_share_high"]   # false_calls.tsv
+INTERVAL = 0.95      # false_calls.tsv: the interval of the false share (Clopper-Pearson for the null windows' share)
+STARTS_COLUMNS = ["Name", "start", "codon", "region", "class", "frame", "ORF_id", "harringtonine", "elongation",
+                  "expected", "enrichment", "p", "typical_p", "q", "multimapped", "shoulder"]
 SCAN_COLUMNS = ["called", "stopped_by", "end", "type"]   # starts.tsv of a scan: STARTS_COLUMNS, then these
 ORF_COLUMNS = ["ORF_id", "Name", "start", "end", "type", "start_codon", "harringtonine", "elongation", "expected",
                "enrichment", "p", "q", "shoulder"]       # start_orfs.tsv, catalogue.tsv
@@ -597,6 +603,12 @@ def pooled_moments(pools, pos, tx, region, zone, bins):
     return Moments(*(sum(col) for col in zip(*got)))
 
 
+def pooled_means(pools, pos, tx, region, zone, bins):
+    """The mean of pooled_moments() alone (the expected harringtonine reads), one pool at a time: for every start
+    codon of a scan."""
+    return sum(window_moments(pl, pos, tx, region, zone, bins).mean for pl in pools.values())
+
+
 def nb_size(m, var, phi):
     """NB size with mean m and variance var + phi m^2; inf (Poisson) if that is not above m."""
     extra = var - m + phi * m ** 2
@@ -761,22 +773,58 @@ def class_q(p, cls, n_tests):
     return q
 
 
-def class_stats(p, q, cls, n_tests, null_p, null_region, fdr):
-    """Per class: its tests, candidates and calls (q < fdr); the share of the null windows at or below the p of its
-    weakest call (the null windows of the class's region; for the annotated starts, the CDS's), and the false calls
-    that share expects in its tests."""
+def class_stats(q, cls, n_tests, fdr):
+    """Per class: its tests, candidates and q < fdr."""
     stats = {}
+    for c, name in enumerate(CLASSES):
+        k = cls == c
+        if k.any():
+            stats.update({f"tests {name}": int(n_tests[c]), f"candidates {name}": int(k.sum()),
+                          f"q<{fdr:g} {name}": int((q[k] < fdr).sum())})
+    return stats
+
+
+def false_calls(p, q, m, cls, called, test_m, null_p, null_m, null_region, fdr):
+    """Per class (with candidates) and bin of expected reads (DEPTH): its tests (test_m: the expected reads of each
+    class's tests), its calls (m, cls, called: of the candidates), and the false calls that the null windows of the
+    bin expect: their share at or below the p cut of the class (the p of its weakest q < fdr), times the tests of the
+    bin. A class takes the null windows of its region, the annotated starts the CDS's.
+    false_share: expected_false / calls, with its INTERVAL (Clopper-Pearson for the null windows' share), at most 1;
+    NA without calls or null windows."""
+    nb, tail = depth_bin(null_m), (1 - INTERVAL) / 2
+    rows = []
     for c, name in enumerate(CLASSES):
         k = cls == c
         if not k.any():
             continue
-        calls = q[k] < fdr
-        cut = p[k][calls].max() if calls.any() else 0.0
+        passing = q[k] < fdr
+        cut = p[k][passing].max() if passing.any() else 0.0
         kn = null_region == (CDS if c == ANNOTATED else c)
-        rate = (null_p[kn] <= cut).mean() if kn.any() and cut > 0 else 0.0
-        stats.update({f"tests {name}": int(n_tests[c]), f"candidates {name}": int(k.sum()),
-                      f"q<{fdr:g} {name}": int(calls.sum()), f"null_rate_at_cut {name}": rate,
-                      f"expected_false {name}": rate * n_tests[c]})
+        tests = np.bincount(depth_bin(test_m[c]), minlength=len(DEPTH))
+        calls = np.bincount(depth_bin(m[k & called]), minlength=len(DEPTH))
+        for b in range(len(DEPTH)):
+            nul = null_p[kn & (nb == b)]
+            n, x = len(nul), int((nul <= cut).sum()) if cut > 0 else 0
+            false, share = np.nan, np.full(3, np.nan)
+            if n:
+                rate = np.array([x / n, betaincinv(x, n - x + 1, tail) if x else 0.0,
+                                 betaincinv(x + 1, n - x, 1 - tail) if x < n else 1.0])
+                false = rate[0] * tests[b]
+                if calls[b]:
+                    share = np.minimum(rate * tests[b] / calls[b], 1.0)
+            rows.append((name, DEPTH[b], DEPTH[b + 1] if b + 1 < len(DEPTH) else np.nan, int(tests[b]),
+                         int(calls[b]), cut, n, x, false, *share))
+    return pd.DataFrame(rows, columns=FALSE_COLUMNS)
+
+
+def false_stats(fc):
+    """Per class, from false_calls(): its calls, the false calls summed over the bins (bins without null windows left
+    out), and their share of the calls (at most 1)."""
+    stats = {}
+    for name, g in fc.groupby("class", sort=False):
+        calls, false = int(g["calls"].sum()), g["expected_false"].sum(min_count=1)
+        stats.update({f"calls {name}": calls, f"expected_false {name}": false,
+                      f"false_share {name}": min(false / calls, 1.0) if calls and not np.isnan(false) else np.nan})
     return stats
 
 
@@ -1044,6 +1092,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         "Name": layout.names[t], "start": start,
         "codon": [layout.seq[x:x + 3].tobytes().decode() for x in pos],
         "region": np.array(REGIONS)[region[pos]],
+        "class": np.array(CLASSES)[cls],
         "frame": pd.Series((start - layout.cds_start[t]) % 3, dtype="Int64").mask(layout.cds_start[t] < 0),
         "ORF_id": [f"{n}_{x + 1}" for n, x in zip(layout.names[t], start)] if scan else ids,
         "harringtonine": h, "elongation": e, "expected": m,
@@ -1054,7 +1103,7 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
     })
     q = class_q(p, cls, n_tests)
     out["q"] = q
-    stats.update(class_stats(p, q, cls, n_tests, null_p, null_region, fdr))
+    stats.update(class_stats(q, cls, n_tests, fdr))
     columns = STARTS_COLUMNS
     if scan:
         orfs, catalogue = scan_calls(out, pos, p, q, cls, layout, tx, fdr, stats)
@@ -1063,6 +1112,10 @@ def run(sheet_path, gtf, fasta, out_prefix, orfs_path=None, scan=False, start_le
         columns = STARTS_COLUMNS + SCAN_COLUMNS
     called = out["called"].to_numpy() if scan else q < fdr
     write_tsv(codon_table(layout, tested, pos, cls, called), f"{out_prefix}.start_codons.tsv")
+    test_m = [pooled_means(pools, t, tx, region, zone, bins) for t in tested]
+    fc = false_calls(p, q, m, cls, called, test_m, null_p, null.mean, null_region, fdr)
+    write_tsv(fc, f"{out_prefix}.false_calls.tsv", na_rep="NA")
+    stats.update(false_stats(fc))
     out = out[columns]
     log.info("%s", stats)
     write_tsv(out, f"{out_prefix}.starts.tsv", na_rep="NA")

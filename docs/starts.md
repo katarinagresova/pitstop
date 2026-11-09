@@ -225,8 +225,13 @@ an elongation peak (a pause) from being shrunk, so a pause is not called.
   with the reads of all pools. Ribosomes that made a few peptide bonds before
   harringtonine acted raise the codons 1-5 of a used start. A pause, or a peak
   at a codon that cannot start, mostly does not raise them.
-- `starts_stats.tsv` gives, per class, the rate of null windows at the $p$ of
-  the last call, and the false calls that rate gives over the class's tests.
+- `false_calls.tsv` gives the false calls per class and bin of expected
+  reads (0-0.3, 0.3-1, 1-3, 3-10, 10-30, 30 or more). In each bin: the share
+  of the null windows at or below the $p$ of the last call of the class,
+  times the tests of the bin, and the share of the calls of the bin that this
+  makes false, with a 95% interval (Clopper-Pearson for the null windows'
+  share). A class takes the null windows of its region; the annotated starts
+  take the CDS's. `starts_stats.tsv` gives the sums per class.
 
 ### 5. The scan
 
@@ -282,21 +287,31 @@ catalogue's ORFs in other libraries, and score their frames with
 - **5′ UTRs need more.** 5′ UTRs have a higher harringtonine / elongation
   ratio than CDSs near their start, so a 5′ UTR start needs more
   harringtonine reads than a CDS start with the same elongation reads.
-- **Deep 5′ UTR starts.** The expected false calls in `starts_stats.tsv`
-  come from the null windows of all depths, and most null windows are
-  shallow. 5′ UTR windows with many expected reads have more peaks at codons
-  that cannot start. In the five pools of the validation, an estimated 10% of
-  the 5′ UTR calls with fewer than 30 expected reads are false, but 24% (95%
-  interval 7-60%) of those with 30 or more. Most deep calls (64%) also raise
-  their codons 1-5, as a used start does. Thus the deep calls stay in the
-  output. Find them by `expected`, and look at their `shoulder` before you
-  use one alone. For one start the shoulder is noisy: 28% of the annotated
-  starts with 3 or more expected reads have a shoulder of 0 or less (median
-  1.0), and so do 42-61% of the null-codon peaks that reach the $p$ of a
-  call (median -0.1 to 0.2).
+- **False calls by depth.** Windows with many expected reads have more peaks
+  at codons that cannot start, so the false share is given per bin of
+  expected reads (`false_calls.tsv` and the report). In the five pools of
+  the validation, 4-6% of the 5′ UTR calls with 0.3-3 expected reads are
+  false by the null windows, 11% with 3-10, and 23-24% with 10 or more (with
+  30 or more: 95% interval 7-60%). A lower `--fdr` does not make a bin
+  cleaner: in a bin, the null windows reach a small $p$ about as often as
+  the start codons do. In the 5′ UTR bin with 3-10 expected reads, the false
+  share stays at 8-10% from $p \le 0.01$ to $p \le 10^{-10}$, while the
+  calls go down by 87%. To keep fewer false calls, leave out whole bins: find
+  a call's bin by its class and `expected`.
+- **Deep 5′ UTR starts.** Other evidence does not show that the deep calls
+  are more often false. Their start context is that of the shallow calls: the
+  5′ UTR calls with 30 or more expected reads have a purine at -3 in 69% and
+  a G at +4 in 48%, the calls with 1-3 expected reads 67% and 46%, and the
+  start codons that are not called 50-56% and 29-30%. With a quarter false,
+  the deep calls would have about 64% and 42%. Most deep calls (64%) also
+  raise their codons 1-5, as a used start does. Thus the deep calls stay in
+  the output. Look at their `shoulder` before you use one alone. For one
+  start the shoulder is noisy: 28% of the annotated starts with 3 or more
+  expected reads have a shoulder of 0 or less (median 1.0), and so do 42-61%
+  of the null-codon peaks that reach the $p$ of a call (median -0.1 to 0.2).
 - **3′ UTRs.** Harringtonine libraries can hold RNA fragments that the
   elongation libraries do not have, mostly in 3′ UTRs and of short reads.
-  `starts_stats.tsv` gives many expected false calls in 3′ UTRs; use those
+  `false_calls.tsv` gives many expected false calls in 3′ UTRs; use those
   calls with care.
 - **Multimappers.** Each alignment counts once, so paralogs and pseudogenes
   share a start peak. `multimapped` gives the share of the window's reads

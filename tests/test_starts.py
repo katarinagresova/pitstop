@@ -182,18 +182,35 @@ def test_bh_counts_untested_as_p1():
     assert np.allclose(starts.bh(p, 10), sps.false_discovery_control(np.r_[p, np.ones(7)])[:3])
 
 
-def test_class_stats_null_windows_of_own_region():
-    # one candidate per class, each called at p 0.01; per region two null windows: both 3' UTR ones and one CDS one at
-    # or below the cut. Each class takes the null windows of its region, the annotated starts the CDS's
+def test_false_calls_per_class_and_depth():
+    # one candidate per class, called at p 0.01 with 0.5 expected reads; each class has 10 tests at 0.5 expected reads
+    # and one at 5. Per region three null windows, at 0.5, 0.5 and 5 expected reads: both shallow 3' UTR ones, one
+    # shallow CDS one and the deep CDS one at or below the cut. Each class takes the null windows of its region and
+    # bin, the annotated starts the CDS's
     cls = np.arange(len(starts.CLASSES))
     p = np.full(len(cls), 0.01)
-    null_region = np.repeat(np.arange(len(starts.REGIONS)), 2)
+    m = np.full(len(cls), 0.5)
+    test_m = [np.r_[np.full(10, 0.5), 5.0]] * len(cls)
+    null_region = np.repeat(np.arange(len(starts.REGIONS)), 3)
+    null_m = np.tile([0.5, 0.5, 5.0], len(starts.REGIONS))
     null_p = np.full(len(null_region), 0.5)
-    null_p[null_region == starts.UTR3] = 0.005
-    null_p[2 * starts.CDS] = 0.005
-    got = starts.class_stats(p, p, cls, np.full(len(cls), 10), null_p, null_region, 0.05)
-    assert [got[f"null_rate_at_cut {c}"] for c in starts.CLASSES] == [0, 0.5, 1, 0, 0.5]
-    assert got["expected_false 3UTR"] == 10
+    null_p[(null_region == starts.UTR3) & (null_m < 1)] = 0.005
+    null_p[[3 * starts.CDS, 3 * starts.CDS + 2]] = 0.005
+    fc = starts.false_calls(p, p, m, cls, np.ones(len(cls), bool), test_m, null_p, null_m, null_region, 0.05)
+    assert list(fc.columns) == starts.FALSE_COLUMNS and len(fc) == len(starts.CLASSES) * len(starts.DEPTH)
+    shallow = fc[fc["expected_from"] == 0.3].set_index("class")
+    assert shallow["null_at_cut"].tolist() == [0, 1, 2, 0, 1] and (shallow["null_windows"] == 2).all()
+    assert (shallow["tests"] == 10).all() and (shallow["calls"] == 1).all()
+    assert shallow["expected_false"].tolist() == [0, 5, 10, 0, 5]
+    assert shallow["false_share"].tolist() == [0, 1, 1, 0, 1]              # at most 1
+    low = 1 - np.sqrt(1 - (1 - starts.INTERVAL) / 2)                        # Clopper-Pearson, 1 of 2
+    assert shallow.loc["CDS", "false_share_low"] == pytest.approx(10 * low)
+    deep = fc[fc["expected_from"] == 3].set_index("class")
+    assert deep.loc["CDS", "expected_false"] == 1 and np.isnan(deep.loc["CDS", "false_share"])   # no calls
+    assert fc[fc["null_windows"] == 0]["expected_false"].isna().all()
+    got = starts.false_stats(fc)
+    assert got["expected_false CDS"] == 6 and got["calls CDS"] == 1 and got["false_share CDS"] == 1
+    assert got["expected_false 5UTR"] == 0 and got["false_share 5UTR"] == 0
 
 
 def test_near_starts_best_first():
