@@ -763,8 +763,8 @@ def class_q(p, cls, n_tests):
 
 def class_stats(p, q, cls, n_tests, null_p, null_region, fdr):
     """Per class: its tests, candidates and calls (q < fdr); the share of the null windows at or below the p of its
-    weakest call (the 5' UTR null windows for the 5' UTR class, the CDS null windows for the other classes), and the
-    false calls that share expects in its tests."""
+    weakest call (the null windows of the class's region; for the annotated starts, the CDS's), and the false calls
+    that share expects in its tests."""
     stats = {}
     for c, name in enumerate(CLASSES):
         k = cls == c
@@ -772,7 +772,7 @@ def class_stats(p, q, cls, n_tests, null_p, null_region, fdr):
             continue
         calls = q[k] < fdr
         cut = p[k][calls].max() if calls.any() else 0.0
-        kn = null_region == min(c, CDS)
+        kn = null_region == (CDS if c == ANNOTATED else c)
         rate = (null_p[kn] <= cut).mean() if kn.any() and cut > 0 else 0.0
         stats.update({f"tests {name}": int(n_tests[c]), f"candidates {name}": int(k.sum()),
                       f"q<{fdr:g} {name}": int(calls.sum()), f"null_rate_at_cut {name}": rate,

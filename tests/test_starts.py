@@ -182,6 +182,20 @@ def test_bh_counts_untested_as_p1():
     assert np.allclose(starts.bh(p, 10), sps.false_discovery_control(np.r_[p, np.ones(7)])[:3])
 
 
+def test_class_stats_null_windows_of_own_region():
+    # one candidate per class, each called at p 0.01; per region two null windows: both 3' UTR ones and one CDS one at
+    # or below the cut. Each class takes the null windows of its region, the annotated starts the CDS's
+    cls = np.arange(len(starts.CLASSES))
+    p = np.full(len(cls), 0.01)
+    null_region = np.repeat(np.arange(len(starts.REGIONS)), 2)
+    null_p = np.full(len(null_region), 0.5)
+    null_p[null_region == starts.UTR3] = 0.005
+    null_p[2 * starts.CDS] = 0.005
+    got = starts.class_stats(p, p, cls, np.full(len(cls), 10), null_p, null_region, 0.05)
+    assert [got[f"null_rate_at_cut {c}"] for c in starts.CLASSES] == [0, 0.5, 1, 0, 0.5]
+    assert got["expected_false 3UTR"] == 10
+
+
 def test_near_starts_best_first():
     pos = np.array([100, 106, 112, 150, 200])
     p = np.array([1e-3, 1e-8, 1e-5, 1e-6, 0.5])
